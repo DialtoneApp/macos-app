@@ -29,7 +29,7 @@ struct DialtoneAppApp: App {
             }
         }
 
-        MenuBarExtra("DialtoneApp Desktop", systemImage: "sparkles") {
+        MenuBarExtra("DialtoneApp Desktop", image: "MenuBarIcon") {
             MenuBarView()
                 .environmentObject(model)
         }
