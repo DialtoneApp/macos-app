@@ -130,6 +130,7 @@
 - Added desktop-login debug logs in macOS `purchases.log`, browser console, and worker console so missing request rows, fallback `/login` opens, callback redirects, and exchange failures can be traced without logging tokens or one-time codes.
 - Pulled live `purchases.log` and found the running Debug app was using `api_base_url=https://dialtoneapp.com`, causing `POST /api/auth/desktop-login-requests` to return `404` and fall back to plain local `/login` with no `desktop_request_id`.
 - Changed `AppEnvironment` so Debug defaults both `FRONTEND_URL` and `API_BASE_URL` to `http://localhost:5173` even when generated Info.plist keys are missing; Release defaults remain `https://dialtoneapp.com`.
+- Confirmed the macOS target uses Xcode-generated Info settings and corrected the target-level `CFBundleURLTypes` entry so the `dialtoneapp-desktop` callback scheme is generated from `project.pbxproj` instead of a separate `Info.plist`.
 
 ### Still pending for public v0.0.1
 

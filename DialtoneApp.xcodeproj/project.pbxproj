@@ -261,7 +261,15 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_API_BASE_URL = "http://localhost:5173";
 				INFOPLIST_KEY_CFBundleDisplayName = "DialtoneApp Desktop";
-				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.dialtoneapp.DialtoneApp.desktop\";\n    CFBundleURLSchemes =     (\n        \"dialtoneapp-desktop\"\n    );\n}";
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleTypeRole = Editor;
+						CFBundleURLName = "com.dialtoneapp.DialtoneApp.desktop";
+						CFBundleURLSchemes = (
+							"dialtoneapp-desktop",
+						);
+					},
+				);
 				INFOPLIST_KEY_FRONTEND_URL = "http://localhost:5173";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -297,7 +305,15 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_API_BASE_URL = "https://dialtoneapp.com";
 				INFOPLIST_KEY_CFBundleDisplayName = "DialtoneApp Desktop";
-				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.dialtoneapp.DialtoneApp.desktop\";\n    CFBundleURLSchemes =     (\n        \"dialtoneapp-desktop\"\n    );\n}";
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleTypeRole = Editor;
+						CFBundleURLName = "com.dialtoneapp.DialtoneApp.desktop";
+						CFBundleURLSchemes = (
+							"dialtoneapp-desktop",
+						);
+					},
+				);
 				INFOPLIST_KEY_FRONTEND_URL = "https://dialtoneapp.com";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
