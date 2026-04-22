@@ -239,10 +239,12 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         decision: CandidateDecision = .pending,
         result: PurchaseFlowResult? = nil
     ) {
+        let displayTitle = PurchaseCandidate.displayTitle(from: title)
+
         self.id = id
         self.domain = domain
         self.merchantName = merchantName
-        self.title = title
+        self.title = displayTitle
         self.description = description
         self.price = price
         self.imageURL = imageURL
@@ -257,7 +259,7 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         self.result = result
         self.fingerprint = PurchaseCandidate.makeFingerprint(
             domain: domain,
-            title: title,
+            title: displayTitle,
             price: price,
             sourceURL: sourceURL,
             productURL: productURL
@@ -284,6 +286,86 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         let rawValue = "\(domain)|\(normalizedTitle)|\(pricePart)|\(productPart)"
         let digest = SHA256.hash(data: Data(rawValue.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func displayTitle(from value: String) -> String {
+        var cleaned = value
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^\((?:paid|free)[^)]*\)\s*"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+
+        guard !cleaned.isEmpty else { return "Untitled item" }
+        return compactLongTitle(cleaned)
+    }
+
+    private static func compactLongTitle(_ value: String) -> String {
+        let limit = 120
+        guard value.count > limit else { return value }
+
+        let suffix = trailingActionSuffix(from: value)
+        var core = value
+        let cutMarkers = [
+            ". Columns:",
+            " Columns:",
+            ". Use cases:",
+            " Use cases:",
+            ". Source:",
+            " Source:"
+        ]
+
+        for marker in cutMarkers {
+            if let range = core.range(of: marker, options: .caseInsensitive) {
+                core = String(core[..<range.lowerBound])
+                break
+            }
+        }
+
+        core = core.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let suffix, !core.localizedCaseInsensitiveContains(suffix) {
+            core += " - \(suffix)"
+        }
+
+        return truncate(core, limit: limit)
+    }
+
+    private static func trailingActionSuffix(from value: String) -> String? {
+        let separators = [" \u{2014} ", " -- ", " - "]
+
+        for separator in separators {
+            guard let range = value.range(of: separator, options: .backwards) else { continue }
+            let suffix = String(value[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !suffix.isEmpty, suffix.count <= 32 {
+                return suffix
+            }
+        }
+
+        return nil
+    }
+
+    private static func truncate(_ value: String, limit: Int) -> String {
+        guard value.count > limit else { return value }
+        let hardEnd = value.index(value.startIndex, offsetBy: max(0, limit - 3))
+        var prefix = String(value[..<hardEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let lastSpace = prefix.range(of: " ", options: .backwards),
+           prefix.distance(from: prefix.startIndex, to: lastSpace.lowerBound) > limit / 2 {
+            prefix = String(prefix[..<lastSpace.lowerBound])
+        }
+
+        return prefix + "..."
     }
 }
 

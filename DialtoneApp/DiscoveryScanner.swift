@@ -294,8 +294,12 @@ final class DomainScanner {
             result.apiCalls.append(contentsOf: openAPI.apiCalls)
             result.candidates.append(contentsOf: openAPI.candidates)
 
-            let generic = parseGenericProductJSON(object: object, domain: domain, sourceURL: sourceURL, source: source)
-            result.candidates.append(contentsOf: generic)
+            if isX402Manifest(object) {
+                result.candidates.append(contentsOf: parseX402Manifest(object: object, domain: domain, sourceURL: sourceURL))
+            } else {
+                let generic = parseGenericProductJSON(object: object, domain: domain, sourceURL: sourceURL, source: source)
+                result.candidates.append(contentsOf: generic)
+            }
         }
 
         if looksLikeHTML(sourceURL: sourceURL, text: text) {
@@ -447,6 +451,65 @@ final class DomainScanner {
         return (Array(apiCalls.prefix(80)), candidates)
     }
 
+    private func parseX402Manifest(
+        object: Any,
+        domain: String,
+        sourceURL: URL
+    ) -> [PurchaseCandidate] {
+        guard let root = object as? [String: Any] else { return [] }
+
+        let items = (root["items"] as? [[String: Any]]) ?? [root].filter { $0["resource"] != nil }
+        guard !items.isEmpty else { return [] }
+
+        let candidates = items.prefix(16).compactMap { item -> PurchaseCandidate? in
+            let resource = item["resource"] as? [String: Any]
+            let rawTitle = stringValue(item["title"])
+                ?? stringValue(item["name"])
+                ?? stringValue(resource?["name"])
+                ?? stringValue(resource?["description"])
+                ?? x402TitleFromResourceURL(resource?["url"], sourceURL: sourceURL)
+
+            guard let title = rawTitle else { return nil }
+
+            let description = stringValue(item["description"])
+                ?? stringValue(resource?["description"])
+                ?? stringValue((item["metadata"] as? [String: Any])?["description"])
+            let productURL = stringValue(resource?["url"])
+                .flatMap { URL(string: $0, relativeTo: sourceURL)?.absoluteURL }
+                ?? stringValue(item["url"]).flatMap { URL(string: $0, relativeTo: sourceURL)?.absoluteURL }
+            let price = x402MoneyHint(from: item)
+            let paymentHint = PaymentHint(method: "x402", endpoint: productURL, acceptedRails: acceptedRails(from: item))
+
+            let call = DiscoveredApiCall(
+                domain: domain,
+                method: x402Method(from: item),
+                url: productURL ?? sourceURL,
+                source: .discoveredURL,
+                capability: title,
+                priceHint: price,
+                paymentHint: paymentHint,
+                confidence: price == nil ? 0.7 : 0.84
+            )
+
+            return PurchaseCandidate(
+                domain: domain,
+                merchantName: merchantName(for: domain),
+                title: title,
+                description: description,
+                price: price,
+                imageURL: nil,
+                productURL: productURL,
+                sourceURL: sourceURL,
+                sourceKind: .x402,
+                purchaseStrategy: .x402,
+                confidence: price == nil ? 0.68 : 0.84,
+                discoveredApiCall: call
+            )
+        }
+
+        return Array(dedupeCandidates(candidates).prefix(12))
+    }
+
     private func parseGenericProductJSON(
         object: Any,
         domain: String,
@@ -463,23 +526,41 @@ final class DomainScanner {
             }
 
             let offer = dictionary["offers"] as? [String: Any]
+            let pricing = dictionary["pricing"] as? [String: Any]
+            let payment = dictionary["payment"] as? [String: Any]
             let description = stringValue(dictionary["description"]).map(stripHTML)
-            let price = Money.parse(
-                dictionary["price"] ?? dictionary["amount"] ?? offer?["price"],
-                currency: stringValue(dictionary["currency"]) ?? stringValue(dictionary["priceCurrency"]) ?? stringValue(offer?["priceCurrency"])
-            ) ?? Money.parseFirstPrice(
-                in: [title, description].compactMap { $0 }.joined(separator: " "),
-                currency: stringValue(dictionary["currency"]) ?? stringValue(dictionary["priceCurrency"]) ?? stringValue(offer?["priceCurrency"])
-            )
+            let currency = stringValue(dictionary["currency"])
+                ?? stringValue(dictionary["priceCurrency"])
+                ?? stringValue(offer?["priceCurrency"])
+                ?? stringValue(pricing?["currency"])
+                ?? stringValue(payment?["currency"])
+            let price = x402MoneyHint(from: dictionary)
+                ?? Money.parse(
+                    dictionary["price"]
+                        ?? dictionary["amount"]
+                        ?? offer?["price"]
+                        ?? pricing?["price"]
+                        ?? pricing?["amount"]
+                        ?? payment?["price"]
+                        ?? payment?["amount"],
+                    currency: currency
+                )
+                ?? Money.parseFirstPrice(
+                    in: [title, description].compactMap { $0 }.joined(separator: " "),
+                    currency: currency
+                )
 
             let productURL = stringValue(dictionary["url"])
                 .flatMap { URL(string: $0, relativeTo: sourceURL)?.absoluteURL }
             let imageURL = imageURL(from: dictionary["image"], sourceURL: sourceURL)
+            let candidateSourceKind = sourceKind == .agentCard && (price != nil || containsText(dictionary, matching: ["x402"]))
+                ? .x402
+                : sourceKind
 
             let hasBuyingSignal = price != nil
                 || productURL != nil
-                || sourceKind == .commerceManifest
-                || sourceKind == .ucp
+                || candidateSourceKind == .commerceManifest
+                || candidateSourceKind == .ucp
                 || containsText(dictionary, matching: ["x402", "purchase", "checkout", "subscription", "billing"])
 
             guard hasBuyingSignal else { return nil }
@@ -493,8 +574,8 @@ final class DomainScanner {
                 imageURL: imageURL,
                 productURL: productURL,
                 sourceURL: sourceURL,
-                sourceKind: sourceKind,
-                purchaseStrategy: purchaseStrategy(for: sourceKind, domain: domain),
+                sourceKind: candidateSourceKind,
+                purchaseStrategy: purchaseStrategy(for: candidateSourceKind, domain: domain),
                 confidence: price == nil ? 0.6 : 0.78
             )
         }
@@ -808,7 +889,8 @@ final class DomainScanner {
     }
 
     private func priceHint(from operation: [String: Any]) -> Money? {
-        Money.parse(operation["x-price"])
+        x402MoneyHint(from: operation)
+            ?? Money.parse(operation["x-price"])
             ?? Money.parse(operation["price"])
             ?? Money.parse(operation["cost"])
             ?? Money.parse((operation["x402"] as? [String: Any])?["price"])
@@ -816,7 +898,7 @@ final class DomainScanner {
     }
 
     private func paymentHint(from operation: [String: Any]) -> PaymentHint? {
-        if containsText(operation, matching: ["x402"]) {
+        if x402MoneyHint(from: operation) != nil || containsText(operation, matching: ["x402"]) {
             return PaymentHint(method: "x402", endpoint: nil, acceptedRails: ["x402"])
         }
 
@@ -826,6 +908,216 @@ final class DomainScanner {
             endpoint: stringValue(payment["endpoint"]).flatMap(URL.init(string:)),
             acceptedRails: (payment["rails"] as? [String]) ?? []
         )
+    }
+
+    private func isX402Manifest(_ object: Any) -> Bool {
+        guard let root = object as? [String: Any] else { return false }
+        if root["items"] as? [[String: Any]] != nil { return true }
+        return root["resource"] != nil && root["accepts"] != nil
+    }
+
+    private func x402MoneyHint(from dictionary: [String: Any]) -> Money? {
+        let normalized = normalizedDictionary(dictionary)
+        let keyedPrices: [(key: String, currency: String?)] = [
+            ("x-x402-price-usdc", "USDC"),
+            ("x-x402-price-usd", "USD"),
+            ("x402-price-usdc", "USDC"),
+            ("x402-price-usd", "USD"),
+            ("x402_price_usdc", "USDC"),
+            ("x402_price_usd", "USD"),
+            ("x-price-usdc", "USDC"),
+            ("x-price-usd", "USD"),
+            ("price_usdc", "USDC"),
+            ("price_usd", "USD"),
+            ("priceusd", "USD"),
+            ("cost_usdc", "USDC"),
+            ("cost_usd", "USD")
+        ]
+
+        for keyedPrice in keyedPrices {
+            if let value = normalized[keyedPrice.key],
+               let money = Money.parse(value, currency: keyedPrice.currency) {
+                return money
+            }
+        }
+
+        let nestedKeys = ["x402", "x-payment", "payment", "paymentrequirements", "payment_requirements"]
+        for key in nestedKeys {
+            if let nested = normalized[key] as? [String: Any],
+               let money = x402MoneyHint(from: nested) {
+                return money
+            }
+        }
+
+        if let accepts = normalized["accepts"] as? [[String: Any]] {
+            return x402AcceptPrice(from: accepts)
+        }
+
+        if let accepts = normalized["accept"] as? [[String: Any]] {
+            return x402AcceptPrice(from: accepts)
+        }
+
+        return nil
+    }
+
+    private func x402AcceptPrice(from accepts: [[String: Any]]) -> Money? {
+        let prioritized = accepts.sorted {
+            x402AssetPriority($0) > x402AssetPriority($1)
+        }
+
+        for accept in prioritized {
+            let normalized = normalizedDictionary(accept)
+            let asset = stringValue(normalized["asset"])
+                ?? stringValue(normalized["currency"])
+                ?? stringValue(normalized["token"])
+            let amount = normalized["amount"]
+                ?? normalized["maxamountrequired"]
+                ?? normalized["max_amount_required"]
+                ?? normalized["price"]
+            let decimals = intValue(normalized["decimals"])
+                ?? intValue(normalized["assetdecimals"])
+                ?? intValue(normalized["asset_decimals"])
+                ?? defaultDecimals(forX402Asset: asset)
+
+            if let money = parseX402Amount(amount, asset: asset, decimals: decimals) {
+                return money
+            }
+        }
+
+        return nil
+    }
+
+    private func parseX402Amount(_ value: Any?, asset: String?, decimals: Int?) -> Money? {
+        guard let value else { return nil }
+
+        let currency = normalizedX402Currency(asset)
+        guard let rawAmount = stringValue(value)?.replacingOccurrences(of: ",", with: ""),
+              !rawAmount.isEmpty else {
+            return nil
+        }
+
+        if rawAmount.contains(".") || decimals == nil || decimals == 0 {
+            return Money.parse(rawAmount, currency: currency)
+        }
+
+        guard let decimal = Decimal(string: rawAmount), let decimalPlaces = decimals else {
+            return Money.parse(rawAmount, currency: currency)
+        }
+
+        var divisor = Decimal(1)
+        for _ in 0..<decimalPlaces {
+            divisor *= Decimal(10)
+        }
+
+        return Money(amount: decimal / divisor, currency: currency)
+    }
+
+    private func defaultDecimals(forX402Asset asset: String?) -> Int? {
+        guard let asset else { return nil }
+        let normalized = asset.lowercased()
+
+        if normalized.hasPrefix("usdc") || normalized == "usd" {
+            return 6
+        }
+
+        if normalized == "sbtc" || normalized == "btc" {
+            return 8
+        }
+
+        if normalized == "stx" {
+            return 6
+        }
+
+        return nil
+    }
+
+    private func normalizedX402Currency(_ asset: String?) -> String {
+        guard let asset, !asset.isEmpty else { return "USD" }
+        let uppercased = asset.uppercased()
+
+        if uppercased.hasPrefix("USDC") {
+            return "USDC"
+        }
+
+        return uppercased
+    }
+
+    private func x402AssetPriority(_ accept: [String: Any]) -> Int {
+        let normalized = normalizedDictionary(accept)
+        let asset = (stringValue(normalized["asset"])
+            ?? stringValue(normalized["currency"])
+            ?? stringValue(normalized["token"])
+            ?? "")
+            .lowercased()
+
+        if asset.hasPrefix("usdc") { return 4 }
+        if asset == "usd" { return 3 }
+        if asset == "stx" { return 2 }
+        if asset == "sbtc" || asset == "btc" { return 1 }
+        return 0
+    }
+
+    private func acceptedRails(from item: [String: Any]) -> [String] {
+        guard let accepts = item["accepts"] as? [[String: Any]] else { return ["x402"] }
+        let rails = accepts.compactMap { accept -> String? in
+            let normalized = normalizedDictionary(accept)
+            let scheme = stringValue(normalized["scheme"]) ?? "x402"
+            let network = stringValue(normalized["network"])
+            let asset = stringValue(normalized["asset"])
+
+            return [scheme, network, asset]
+                .compactMap { $0 }
+                .joined(separator: ":")
+        }
+
+        return rails.isEmpty ? ["x402"] : rails
+    }
+
+    private func x402Method(from item: [String: Any]) -> String {
+        guard
+            let extensions = item["extensions"] as? [String: Any],
+            let bazaar = extensions["bazaar"] as? [String: Any],
+            let info = bazaar["info"] as? [String: Any],
+            let input = info["input"] as? [String: Any],
+            let method = stringValue(input["method"])
+        else {
+            return "GET"
+        }
+
+        return method.uppercased()
+    }
+
+    private func x402TitleFromResourceURL(_ value: Any?, sourceURL: URL) -> String? {
+        guard let string = stringValue(value),
+              let url = URL(string: string, relativeTo: sourceURL)?.absoluteURL else {
+            return nil
+        }
+
+        let component = url.lastPathComponent.replacingOccurrences(of: "-", with: " ")
+        guard !component.isEmpty else { return nil }
+        return component.capitalized
+    }
+
+    private func normalizedDictionary(_ dictionary: [String: Any]) -> [String: Any] {
+        dictionary.reduce(into: [:]) { result, pair in
+            result[pair.key.lowercased()] = pair.value
+        }
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let int = value as? Int {
+            return int
+        }
+
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+
+        if let string = stringValue(value) {
+            return Int(string)
+        }
+
+        return nil
     }
 
     private func isPurchaseRelevant(path: String, title: String, description: String?) -> Bool {
@@ -861,6 +1153,7 @@ final class DomainScanner {
             if path.contains("ucp") { return .ucp }
             if path.contains("commerce") { return .commerceManifest }
             if path.contains("openapi") || path.contains("swagger") { return .openAPI }
+            if path.contains("x402") { return .x402 }
             if path.contains("products.json") { return .productsJSON }
             return .htmlFallback
         }

@@ -63,6 +63,18 @@
 - Re-ran `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build`; the build succeeds after these follow-path and dedupe fixes.
 - Note: restart the running debug app after this patch so the scanner uses the updated follow and dedupe rules.
 
+### x402 price and title cleanup pass - April 22, 2026
+
+- Reviewed the latest high-signal tail and found the remaining scanner noise was mostly no-price x402 candidates plus overly long dataset/API titles.
+- Added OpenAPI x402 price parsing for fields such as `x-x402-price-usdc`, `x402-price-usdc`, `price_usdc`, and related USD/USDC variants.
+- Added parser support for x402 manifests with `items`, `resource`, and `accepts` arrays.
+- Added stablecoin/token amount normalization for x402 `accepts` metadata, including USDC-style minor-unit amounts.
+- Added nested agent-card price extraction from `pricing` and `payment` objects.
+- Marked priced agent-card candidates as x402 candidates when the discovered data indicates a paid machine-readable action.
+- Added candidate title cleanup so leading paid/free prefixes are removed, long dataset titles are compacted, and display titles are capped before they reach the UI/logs/fingerprints.
+- Ran `git diff --check`; no whitespace errors were reported.
+- Note: the running debug app needs another restart before these x402/title parser changes show up in new logs.
+
 ### Still pending for public v0.0.1
 
 - Real desktop login request creation endpoint.
@@ -76,7 +88,7 @@
 - Budget and policy enforcement before sending any real purchase request.
 - Backend contract hardening for `GET /api/users/me/network-card`.
 - Backend contract hardening for `POST /api/users/me/bot-purchases`.
-- More complete x402 payment-required metadata parsing.
+- Further x402 payment-required metadata parsing after another live-log pass.
 - More complete UCP, commerce manifest, and agent-card schema parsing.
 - Browser handoff result polish for unsupported merchants.
 - Release archive/signing/notarization pass.
