@@ -221,7 +221,7 @@ struct HeroPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Bot with a budget", systemImage: "sparkles")
+                    Label("Bot with a budget", systemImage: "")
                         .font(.headline)
                         .foregroundStyle(.teal)
 
@@ -624,7 +624,7 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Image(systemName: "sparkles")
+                Image(systemName: "")
                     .foregroundStyle(.teal)
                 Text("DialtoneApp Desktop")
                     .font(.headline)
