@@ -134,6 +134,9 @@
 - Re-tested the browser login handoff: the web side created and completed desktop login request rows, but `code_used_at` stayed empty and macOS logged no callback, proving the old built app was not registered for `dialtoneapp-desktop`.
 - Switched the app to a checked-in `Info.plist` with Debug/Release `API_BASE_URL` and `FRONTEND_URL` build settings after Xcode did not emit nested `CFBundleURLTypes` from generated target settings.
 - Rebuilt Debug and confirmed the final app bundle contains `CFBundleURLTypes`, localhost env values, and Launch Services claims `dialtoneapp-desktop`.
+- Verified a fresh login callback now reaches DialtoneApp Desktop, exchanges the one-time code, stores the desktop token, and marks `code_used_at` in local D1.
+- Found the next weird state: `/api/users/me/network-card` returns `payment_method` and `payment_methods`, so the desktop app was treating any `200` response as "card exists" and moving on to the purchase request instead of sending cardless users to `/bot-buyer`.
+- Fixed the desktop card gate to parse the actual network-card payload, clear rejected desktop tokens, surface signed-in/card readiness in the UI, and treat missing API/x402 purchase support as unsupported instead of a red failure.
 
 ### Still pending for public v0.0.1
 

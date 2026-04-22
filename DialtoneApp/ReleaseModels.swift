@@ -201,6 +201,49 @@ struct PurchaseFlowResult: Codable, Hashable {
     var handoffURL: URL?
 }
 
+enum DesktopPurchaseReadiness: String, Hashable {
+    case checking
+    case signedOut
+    case signedInCheckingCard
+    case signedInNeedsCard
+    case ready
+    case unavailable
+
+    var label: String {
+        switch self {
+        case .checking:
+            return "Checking login"
+        case .signedOut:
+            return "Not signed in"
+        case .signedInCheckingCard:
+            return "Signed in, checking card"
+        case .signedInNeedsCard:
+            return "Needs bot-buyer card"
+        case .ready:
+            return "Ready to buy"
+        case .unavailable:
+            return "Card status unavailable"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .checking:
+            return "arrow.triangle.2.circlepath"
+        case .signedOut:
+            return "person.crop.circle.badge.xmark"
+        case .signedInCheckingCard:
+            return "person.crop.circle.badge.checkmark"
+        case .signedInNeedsCard:
+            return "creditcard.trianglebadge.exclamationmark"
+        case .ready:
+            return "checkmark.seal"
+        case .unavailable:
+            return "exclamationmark.triangle"
+        }
+    }
+}
+
 struct PurchaseCandidate: Identifiable, Codable, Hashable {
     var id: UUID
     var domain: String

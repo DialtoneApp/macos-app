@@ -20,6 +20,8 @@ final class BotShoppingModel: ObservableObject {
     @Published private(set) var candidates: [PurchaseCandidate] = []
     @Published private(set) var reports: [DomainDiscoveryReport] = []
     @Published private(set) var unseenCandidateCount = 0
+    @Published private(set) var purchaseReadiness: DesktopPurchaseReadiness = .checking
+    @Published private(set) var purchasingCandidateIDs = Set<UUID>()
 
     let logs: LocalLogStore
 
@@ -68,6 +70,7 @@ final class BotShoppingModel: ObservableObject {
         }
 
         scanner?.startIfNeeded()
+        refreshPurchaseReadiness()
     }
 
     var pendingCandidates: [PurchaseCandidate] {
@@ -100,6 +103,9 @@ final class BotShoppingModel: ObservableObject {
     }
 
     func approve(_ candidate: PurchaseCandidate) {
+        guard !purchasingCandidateIDs.contains(candidate.id) else { return }
+        purchasingCandidateIDs.insert(candidate.id)
+
         updateCandidate(candidate.id) { candidate in
             candidate.decision = .approved
         }
@@ -109,7 +115,13 @@ final class BotShoppingModel: ObservableObject {
             updateCandidate(candidate.id) { candidate in
                 candidate.result = result
             }
+            purchaseReadiness = await purchaseCoordinator.purchaseReadiness()
+            purchasingCandidateIDs.remove(candidate.id)
         }
+    }
+
+    func isPurchasing(_ candidate: PurchaseCandidate) -> Bool {
+        purchasingCandidateIDs.contains(candidate.id)
     }
 
     func openSource(for candidate: PurchaseCandidate) {
@@ -120,11 +132,20 @@ final class BotShoppingModel: ObservableObject {
         let handled = await purchaseCoordinator.handleAuthCallback(url)
         if handled {
             status = "Processed DialtoneApp login callback"
+            purchaseReadiness = .signedInCheckingCard
+            purchaseReadiness = await purchaseCoordinator.purchaseReadiness()
         } else {
             logs.append(.agent, level: .warning, "Ignored unsupported URL callback", metadata: [
                 "scheme": url.scheme ?? "none",
                 "host": url.host ?? "none"
             ])
+        }
+    }
+
+    private func refreshPurchaseReadiness() {
+        purchaseReadiness = .checking
+        Task {
+            purchaseReadiness = await purchaseCoordinator.purchaseReadiness()
         }
     }
 
@@ -273,6 +294,7 @@ struct HeroPanel: View {
                 MetricPill(icon: "sparkle.magnifyingglass", label: "Found", value: "\(model.candidates.count) items", tint: .blue)
                 MetricPill(icon: "circle.fill", label: "Unseen", value: "\(model.unseenCandidateCount)", tint: .red)
                 MetricPill(icon: "network", label: "Scanned", value: "\(model.scannedDomainCount) domains", tint: .orange)
+                MetricPill(icon: model.purchaseReadiness.systemImage, label: "Account", value: model.purchaseReadiness.label, tint: model.purchaseReadiness.tint)
             }
         }
         .padding(24)
@@ -289,6 +311,8 @@ struct StatusStrip: View {
             Label(model.status, systemImage: model.botEnabled ? "antenna.radiowaves.left.and.right" : "pause.circle")
                 .font(.callout.weight(.medium))
             Spacer()
+            Label(model.purchaseReadiness.label, systemImage: model.purchaseReadiness.systemImage)
+                .foregroundStyle(model.purchaseReadiness.tint)
             Label("\(DomainCorpus.all.count) domains", systemImage: "list.bullet.rectangle")
             Label("\(model.pendingCandidates.count) pending", systemImage: "tray")
             Label("\(model.logs.networkLines.count) calls", systemImage: "network")
@@ -415,6 +439,19 @@ struct MetricPill: View {
     }
 }
 
+private extension DesktopPurchaseReadiness {
+    var tint: Color {
+        switch self {
+        case .checking, .signedInCheckingCard:
+            return .blue
+        case .signedOut, .signedInNeedsCard, .unavailable:
+            return .orange
+        case .ready:
+            return .green
+        }
+    }
+}
+
 struct EmptyScannerState: View {
     var body: some View {
         Card(title: "Scanner warming up", icon: "antenna.radiowaves.left.and.right") {
@@ -520,10 +557,10 @@ struct CandidateCard: View {
                 Button {
                     model.approve(candidate)
                 } label: {
-                    Label("Yes, buy", systemImage: "checkmark")
+                    Label(approveButtonTitle, systemImage: isPurchasing ? "hourglass" : "checkmark")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(candidate.decision != .pending)
+                .disabled(!canApprove)
 
                 Spacer()
 
@@ -537,6 +574,44 @@ struct CandidateCard: View {
         .padding(16)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var isPurchasing: Bool {
+        model.isPurchasing(candidate)
+    }
+
+    private var canApprove: Bool {
+        guard !isPurchasing, candidate.decision != .dismissed else { return false }
+
+        guard let state = candidate.result?.state else { return true }
+
+        switch state {
+        case .purchased, .needsBrowserCheckout, .unsupportedMerchant:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var approveButtonTitle: String {
+        if isPurchasing {
+            return "Working"
+        }
+
+        guard let state = candidate.result?.state else {
+            return "Yes, buy"
+        }
+
+        switch state {
+        case .needsLogin:
+            return "Continue"
+        case .needsBotBuyerCard:
+            return "Check again"
+        case .failed:
+            return "Retry buy"
+        default:
+            return "Approved"
+        }
     }
 }
 

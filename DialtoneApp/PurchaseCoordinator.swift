@@ -11,17 +11,17 @@ final class PurchaseCoordinator {
     private let pendingDesktopLoginStateKey = "dialtoneapp.desktop_login.state"
     private let pendingDesktopLoginRequestIDKey = "dialtoneapp.desktop_login.request_id"
 
-    init(logStore: LocalLogStore, environment: AppEnvironment = .current) {
+    init(logStore: LocalLogStore, environment: AppEnvironment? = nil) {
         self.logStore = logStore
-        self.environment = environment
+        self.environment = environment ?? .current
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 20
         session = URLSession(configuration: configuration)
 
         logStore.append(.purchases, "Purchase coordinator configured", metadata: [
-            "frontend_url": environment.frontendURL.absoluteString,
-            "api_base_url": environment.apiBaseURL.absoluteString,
+            "frontend_url": self.environment.frontendURL.absoluteString,
+            "api_base_url": self.environment.apiBaseURL.absoluteString,
             "callback_url": desktopCallbackURL.absoluteString
         ])
     }
@@ -32,6 +32,29 @@ final class PurchaseCoordinator {
             "domain": candidate.domain,
             "title": candidate.title
         ])
+    }
+
+    func purchaseReadiness() async -> DesktopPurchaseReadiness {
+        guard let token = loadDesktopSessionToken(), !token.isEmpty else {
+            return .signedOut
+        }
+
+        do {
+            switch try await checkSavedCard(token: token, candidate: nil, requestID: nil) {
+            case .authorized(let hasCard):
+                return hasCard ? .ready : .signedInNeedsCard
+            case .unauthorized:
+                deleteDesktopSessionToken()
+                return .signedOut
+            case .unavailable:
+                return .unavailable
+            }
+        } catch {
+            logStore.append(.purchases, level: .warning, "Purchase readiness check failed", metadata: [
+                "error": error.localizedDescription
+            ])
+            return .unavailable
+        }
     }
 
     func approve(_ candidate: PurchaseCandidate) async -> PurchaseFlowResult {
@@ -65,8 +88,10 @@ final class PurchaseCoordinator {
         }
 
         do {
-            let hasCard = try await checkSavedCard(token: token, candidate: candidate, requestID: purchaseRequestID)
-            guard hasCard else {
+            switch try await checkSavedCard(token: token, candidate: candidate, requestID: purchaseRequestID) {
+            case .authorized(let hasCard) where hasCard:
+                break
+            case .authorized:
                 let botBuyerURL = environment.frontendPath("bot-buyer")
                 NSWorkspace.shared.open(botBuyerURL)
                 let result = PurchaseFlowResult(
@@ -74,6 +99,30 @@ final class PurchaseCoordinator {
                     message: "Add a saved bot-buyer card before DialtoneApp Desktop can buy on your behalf.",
                     requestID: purchaseRequestID,
                     handoffURL: botBuyerURL
+                )
+                logResult(result, candidate: candidate)
+                return result
+            case .unauthorized:
+                deleteDesktopSessionToken()
+                logStore.append(.purchases, level: .warning, "Desktop session token rejected; starting desktop login", metadata: [
+                    "candidate_id": candidate.id.uuidString,
+                    "purchase_request_id": purchaseRequestID
+                ])
+                let authURL = await openDesktopLogin()
+                let result = PurchaseFlowResult(
+                    state: .needsLogin,
+                    message: "DialtoneApp Desktop session expired. Sign in again before buying.",
+                    requestID: purchaseRequestID,
+                    handoffURL: authURL
+                )
+                logResult(result, candidate: candidate)
+                return result
+            case .unavailable(let status):
+                let result = PurchaseFlowResult(
+                    state: .failed,
+                    message: "Could not verify the saved bot-buyer card. Status \(status).",
+                    requestID: purchaseRequestID,
+                    handoffURL: nil
                 )
                 logResult(result, candidate: candidate)
                 return result
@@ -300,7 +349,11 @@ final class PurchaseCoordinator {
         return token
     }
 
-    private func checkSavedCard(token: String, candidate: PurchaseCandidate, requestID: String) async throws -> Bool {
+    private func checkSavedCard(
+        token: String,
+        candidate: PurchaseCandidate?,
+        requestID: String?
+    ) async throws -> SavedCardCheckResult {
         var request = URLRequest(url: environment.apiPath("api/users/me/network-card"))
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -310,31 +363,36 @@ final class PurchaseCoordinator {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let durationMS = Int(Date().timeIntervalSince(started) * 1_000)
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let cardSummary = object.map(networkCardSummary) ?? NetworkCardSummary(hasCard: false, paymentMethodCount: 0, configured: nil)
 
-        logStore.append(.purchases, level: status == 200 ? .success : .warning, "Saved-card check completed", metadata: [
-            "candidate_id": candidate.id.uuidString,
-            "purchase_request_id": requestID,
+        var metadata = [
             "status": "\(status)",
             "duration_ms": "\(durationMS)",
-            "bytes": "\(data.count)"
-        ])
-
-        guard status == 200 else { return false }
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            return true
+            "bytes": "\(data.count)",
+            "card_present": cardSummary.hasCard ? "true" : "false",
+            "payment_methods": "\(cardSummary.paymentMethodCount)"
+        ]
+        if let configured = cardSummary.configured {
+            metadata["configured"] = configured ? "true" : "false"
+        }
+        if let candidate {
+            metadata["candidate_id"] = candidate.id.uuidString
+        }
+        if let requestID {
+            metadata["purchase_request_id"] = requestID
         }
 
-        if let hasCard = object["has_saved_bot_buyer_card"] as? Bool {
-            return hasCard
-        }
+        logStore.append(.purchases, level: status == 200 ? .success : .warning, "Saved-card check completed", metadata: metadata)
 
-        if let hasCard = object["hasCard"] as? Bool {
-            return hasCard
+        switch status {
+        case 200:
+            return .authorized(hasCard: cardSummary.hasCard)
+        case 401, 403:
+            return .unauthorized
+        default:
+            return .unavailable(status: status)
         }
-
-        return true
     }
 
     private func submitPurchase(
@@ -424,6 +482,8 @@ final class PurchaseCoordinator {
             return .needsLogin
         case 402:
             return .needsBotBuyerCard
+        case 404 where candidate.purchaseStrategy != .browserCheckout:
+            return .unsupportedMerchant
         case 409:
             return .failed
         case 501:
@@ -509,6 +569,10 @@ final class PurchaseCoordinator {
         return String(data: data, encoding: .utf8)
     }
 
+    private func deleteDesktopSessionToken() {
+        SecItemDelete(desktopSessionQuery() as CFDictionary)
+    }
+
     private func saveDesktopSessionToken(_ token: String) throws {
         let data = Data(token.utf8)
         let query = desktopSessionQuery()
@@ -559,6 +623,62 @@ final class PurchaseCoordinator {
         return String(compact.prefix(300))
     }
 
+    private func networkCardSummary(_ object: [String: Any]) -> NetworkCardSummary {
+        if let hasCard = boolValue(object["has_saved_bot_buyer_card"]) ?? boolValue(object["hasCard"]) {
+            return NetworkCardSummary(
+                hasCard: hasCard,
+                paymentMethodCount: hasCard ? 1 : 0,
+                configured: boolValue(object["configured"])
+            )
+        }
+
+        let paymentMethods = (object["payment_methods"] as? [Any]) ?? []
+        let validPaymentMethodCount = paymentMethods.reduce(0) { count, value in
+            guard let paymentMethod = value as? [String: Any], isUsablePaymentMethod(paymentMethod) else {
+                return count
+            }
+            return count + 1
+        }
+
+        let defaultPaymentMethod = object["payment_method"] as? [String: Any]
+        let hasDefaultPaymentMethod = defaultPaymentMethod.map(isUsablePaymentMethod) ?? false
+
+        return NetworkCardSummary(
+            hasCard: hasDefaultPaymentMethod || validPaymentMethodCount > 0,
+            paymentMethodCount: max(validPaymentMethodCount, hasDefaultPaymentMethod ? 1 : 0),
+            configured: boolValue(object["configured"])
+        )
+    }
+
+    private func isUsablePaymentMethod(_ paymentMethod: [String: Any]) -> Bool {
+        stringValue(paymentMethod["id"]) != nil
+            || stringValue(paymentMethod["last4"]) != nil
+            || stringValue(paymentMethod["stripe_payment_method_id"]) != nil
+    }
+
+    private func boolValue(_ value: Any?) -> Bool? {
+        if let bool = value as? Bool {
+            return bool
+        }
+
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+
+        if let string = stringValue(value) {
+            switch string.lowercased() {
+            case "true", "yes", "1":
+                return true
+            case "false", "no", "0":
+                return false
+            default:
+                return nil
+            }
+        }
+
+        return nil
+    }
+
     private func stringValue(_ value: Any?) -> String? {
         if let string = value as? String {
             let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -577,6 +697,18 @@ private struct DesktopLoginRequest {
     var requestID: String?
     var state: String
     var loginURL: URL
+}
+
+private struct NetworkCardSummary {
+    var hasCard: Bool
+    var paymentMethodCount: Int
+    var configured: Bool?
+}
+
+private enum SavedCardCheckResult {
+    case authorized(hasCard: Bool)
+    case unauthorized
+    case unavailable(status: Int)
 }
 
 private enum DesktopAuthError: LocalizedError {
