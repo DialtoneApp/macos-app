@@ -1,8 +1,12 @@
 # DialtoneApp Desktop
 
-DialtoneApp Desktop is a native macOS menu bar app that scans a fixed corpus of bot-buyable domains, records every network probe, extracts product or paid API candidates, and asks the user before starting a purchase flow.
+[DialtoneApp](https://dialtoneapp.com/) helps businesses become AI aware: discoverable by AI systems, readable through clean source pages and markdown mirrors, and ready to move toward agent-mediated sales flows when bots need to do more than quote a page. The public site frames that path as layers: SEO/AEO/GEO and `llms.txt` first, then runtime access through APIs, MCP, or A2A, commerce contracts such as UCP or ACP, and delegated payment authority such as AP2 or scoped tokens.
 
-This repository is the macOS desktop app for the v0.0.1 public release loop described in [docs/plan.md](docs/plan.md).
+[DialtoneApp products](https://dialtoneapp.com/products): Dialtone Card Registry, DialtoneApp Scan + Support, and DialtoneApp Network. DialtoneApp Desktop is the fourth product.
+
+This repository is the native macOS desktop app for the v0.0.1 public release loop described in [docs/plan.md](docs/plan.md). The release is meant for developers who want to check out the technology, inspect how machine-readable commerce surfaces are discovered, and learn about the practical edges of [bot-to-bot payments](https://dialtoneapp.com/bot-to-bot). The app scans a fixed corpus of bot-buyable domains, records every network probe, extracts product or paid API candidates, and asks the user before starting a purchase flow.
+
+The desktop app also follows the public [dogfood plan](https://dialtoneapp.com/dogfood): prove the two-sided transaction flow in a constrained environment before pretending open-web bot buying is solved. For the broader commerce background, see the [DialtoneApp FAQ](https://dialtoneapp.com/faq).
 
 ## Current Status
 
