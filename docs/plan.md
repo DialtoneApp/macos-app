@@ -53,6 +53,16 @@
 - Changed candidate fingerprinting to normalize titles and avoid treating different source files for the same product as distinct user-facing candidates.
 - Re-ran `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build`; the build succeeds after these scanner fixes.
 
+### Follow-up scanner fixes from restarted logs - April 22, 2026
+
+- Reviewed the restarted app logs and confirmed the scanner was running through high-signal domains again.
+- Confirmed embedded price extraction now works for StableEmail and several HTML fallback candidates.
+- Confirmed binary attachment/image fetches and malformed markdown URL follows no longer appeared in the new logs.
+- Added a shallow-follow guard for editorial/report URL paths such as `/q/`, `/r/`, `/blog/`, `/articles/`, `/guides/`, `/reports/`, `/top-sites/`, and date-prefixed report paths.
+- Updated candidate dedupe so no-price candidates are merged into priced candidates with the same normalized domain/title, while same-title candidates with distinct prices can still remain separate.
+- Re-ran `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build`; the build succeeds after these follow-path and dedupe fixes.
+- Note: restart the running debug app after this patch so the scanner uses the updated follow and dedupe rules.
+
 ### Still pending for public v0.0.1
 
 - Real desktop login request creation endpoint.

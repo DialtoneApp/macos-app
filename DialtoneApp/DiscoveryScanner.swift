@@ -622,6 +622,7 @@ final class DomainScanner {
         guard url.scheme == "https" || url.scheme == "http" else { return false }
         guard url.host?.lowercased() == domain.lowercased() else { return false }
         if isBinary(contentType: nil, url: url) || looksLikeBinaryAssetURL(url) { return false }
+        if looksLikeEditorialOrReportURL(url) { return false }
 
         let value = url.absoluteString.lowercased()
         let tokens = [
@@ -701,6 +702,39 @@ final class DomainScanner {
         ]
 
         return blockedPathParts.contains { path.contains($0) }
+    }
+
+    private func looksLikeEditorialOrReportURL(_ url: URL) -> Bool {
+        let path = url.path.lowercased()
+        let blockedPrefixes = [
+            "/q/",
+            "/r/",
+            "/blog/",
+            "/blogs/",
+            "/article/",
+            "/articles/",
+            "/guides/",
+            "/guide/",
+            "/reports/",
+            "/report/",
+            "/top-sites/"
+        ]
+
+        if blockedPrefixes.contains(where: { path.hasPrefix($0) }) {
+            return true
+        }
+
+        let components = path
+            .split(separator: "/")
+            .map(String.init)
+
+        if let first = components.first,
+           first.count == 4,
+           first.allSatisfy(\.isNumber) {
+            return true
+        }
+
+        return false
     }
 
     private func cleanURLCandidate(_ value: String) -> String {
@@ -920,28 +954,52 @@ final class DomainScanner {
     }
 
     private func dedupeCandidates(_ candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
-        var keys: [String] = []
-        var bestByKey: [String: PurchaseCandidate] = [:]
+        var groups: [String: [PurchaseCandidate]] = [:]
+        var groupOrder: [String] = []
 
         for candidate in candidates {
-            let key = dedupeKey(for: candidate)
-            if let existing = bestByKey[key] {
-                if candidateScore(candidate) > candidateScore(existing) {
-                    bestByKey[key] = candidate
-                }
-            } else {
-                keys.append(key)
-                bestByKey[key] = candidate
+            let key = titleDedupeKey(for: candidate)
+            if groups[key] == nil {
+                groups[key] = []
+                groupOrder.append(key)
             }
+            groups[key]?.append(candidate)
         }
 
-        return keys.compactMap { bestByKey[$0] }
+        return groupOrder.flatMap { key -> [PurchaseCandidate] in
+            guard let group = groups[key] else { return [] }
+            let priced = group.filter { $0.price != nil }
+
+            if priced.isEmpty {
+                return [bestCandidate(in: group)]
+            }
+
+            var priceKeys: [String] = []
+            var bestByPrice: [String: PurchaseCandidate] = [:]
+
+            for candidate in priced {
+                let priceKey = candidate.price.map { "\($0.currency):\($0.amount)" } ?? "no-price"
+                if let existing = bestByPrice[priceKey] {
+                    if candidateScore(candidate) > candidateScore(existing) {
+                        bestByPrice[priceKey] = candidate
+                    }
+                } else {
+                    priceKeys.append(priceKey)
+                    bestByPrice[priceKey] = candidate
+                }
+            }
+
+            return priceKeys.compactMap { bestByPrice[$0] }
+        }
     }
 
-    private func dedupeKey(for candidate: PurchaseCandidate) -> String {
+    private func bestCandidate(in candidates: [PurchaseCandidate]) -> PurchaseCandidate {
+        candidates.max { candidateScore($0) < candidateScore($1) } ?? candidates[0]
+    }
+
+    private func titleDedupeKey(for candidate: PurchaseCandidate) -> String {
         let title = normalizeForDedupe(candidate.title)
-        let price = candidate.price.map { "\($0.currency):\($0.amount)" } ?? "no-price"
-        return "\(candidate.domain)|\(title)|\(price)"
+        return "\(candidate.domain)|\(title)"
     }
 
     private func normalizeForDedupe(_ value: String) -> String {
