@@ -1,5 +1,64 @@
 # DialtoneApp Desktop v0.0.1 public release plan
 
+## Progress update - April 22, 2026
+
+### Implemented in the first app slice
+
+- Native app display name remains `DialtoneApp Desktop`.
+- Debug build version is set to `0.0.1`.
+- The macOS app runs as a menu bar app and can keep running after the main window closes.
+- Menu bar label now supports the favicon-derived icon with a red dot when `unseenCandidateCount > 0`.
+- Menu bar menu now shows scanner state, unseen/pending counts, top candidates, `Open DialtoneApp Desktop`, `View Log`, `Reveal Log Files`, and `Pause Bot` / `Resume Bot`.
+- `View Log` opens a dedicated log window.
+- Local logs are written under:
+  - `~/Library/Logs/DialtoneApp Desktop/agent.log`
+  - `~/Library/Logs/DialtoneApp Desktop/network.log`
+  - `~/Library/Logs/DialtoneApp Desktop/purchases.log`
+- App support directory is created under `~/Library/Application Support/DialtoneApp Desktop/`.
+- The hard-coded scan corpus from this plan is now included in the app.
+- Scanner starts with the first 10 high-signal domains.
+- Scanner probes the planned well-known, OpenAPI, products, robots, sitemap, and homepage URLs.
+- Scanner logs one structured network entry per request.
+- Scanner does shallow same-host discovered URL following with a 20 URL cap per domain.
+- Initial parsers are implemented for:
+  - Shopify-style `products.json`
+  - WooCommerce Store API products
+  - OpenAPI / Swagger paths and operations
+  - Generic commerce/product JSON
+  - JSON-LD Product data
+  - OpenGraph product fallbacks
+- Candidate dedupe uses a SHA-256 fingerprint of domain, title, price, source URL, and product URL.
+- `Found Items` UI now shows live discovered candidates instead of static examples.
+- Candidate cards include merchant, title, price, description, image when available, source URL, source kind, confidence, and purchase strategy.
+- Candidate cards support `No`, `Yes, buy`, and `Open source`.
+- `No` marks the candidate dismissed and logs the decision.
+- `Yes, buy` starts a `PurchaseCoordinator` flow and logs the decision.
+- Purchase flow currently checks for a Keychain desktop session token, opens `https://dialtoneapp.com/login` if missing, checks the saved bot-buyer card endpoint if logged in, opens `https://dialtoneapp.com/bot-buyer` if no saved card is reported, and posts purchase requests to the proposed DialtoneApp Network endpoint.
+- Result states are modeled and displayed: purchased, needs login, needs bot-buyer card, needs browser checkout, unsupported merchant, policy blocked, and failed.
+- App sandbox is disabled for this target so the scanner can make outbound requests and write the required local log paths.
+
+### Verified
+
+- `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build` succeeds.
+
+### Still pending for public v0.0.1
+
+- Real desktop login request creation endpoint.
+- Custom URL scheme registration for `dialtoneapp-desktop://auth/callback?code=...`.
+- Auth callback handling and code exchange.
+- Keychain write path for the exchanged desktop session token.
+- Durable SQLite store for domain reports, network calls, discovered API calls, and purchase candidates.
+- `settings.json` persistence for scan enabled, budget, approval settings, and dismissed candidates.
+- Per-domain successful re-scan cadence of 6 hours.
+- Failed-domain exponential backoff persistence.
+- Budget and policy enforcement before sending any real purchase request.
+- Backend contract hardening for `GET /api/users/me/network-card`.
+- Backend contract hardening for `POST /api/users/me/bot-purchases`.
+- More complete x402 payment-required metadata parsing.
+- More complete UCP, commerce manifest, and agent-card schema parsing.
+- Browser handoff result polish for unsupported merchants.
+- Release archive/signing/notarization pass.
+
 ## Goal
 
 Ship a public v0.0.1 of DialtoneApp Desktop that runs as a native macOS menu bar app, scans a fixed corpus of bot-buyable domains, logs every network call, extracts product or paid API opportunities, and asks the user whether DialtoneApp Desktop should buy a found item.
@@ -640,4 +699,3 @@ Done when:
 - `Yes, buy` calls DialtoneApp Network when logged in with a saved card.
 - Unsupported merchants show a clear unsupported or browser fallback state.
 - No card data, secrets, or auth tokens are written to logs.
-
