@@ -1,0 +1,151 @@
+# DialtoneApp Desktop
+
+DialtoneApp Desktop is a native macOS menu bar app that scans a fixed corpus of bot-buyable domains, records every network probe, extracts product or paid API candidates, and asks the user before starting a purchase flow.
+
+This repository is the macOS desktop app for the v0.0.1 public release loop described in [docs/plan.md](docs/plan.md).
+
+## Current Status
+
+The first working slice is implemented:
+
+- Native SwiftUI macOS app named `DialtoneApp Desktop`
+- Menu bar app with red-dot candidate state
+- Hard-coded scan corpus from the April 2026 AI bot buying report
+- High-signal domains scanned immediately on launch
+- Domain-only discovery, no search engine dependency
+- Network logging for each probe
+- Candidate extraction from:
+  - OpenAPI / Swagger
+  - UCP-like JSON
+  - commerce manifests
+  - agent cards
+  - x402-like metadata
+  - Shopify `products.json`
+  - WooCommerce Store API
+  - JSON-LD Product data
+  - OpenGraph product metadata
+- Found item cards with approve/reject/source actions
+- Log window with Agent, Network, and Purchases tabs
+- Purchase coordinator scaffold for DialtoneApp login, saved-card gate, and DialtoneApp Network purchase request
+
+Still pending for v0.0.1:
+
+- Desktop login request creation
+- `dialtoneapp-desktop://auth/callback` URL scheme handling
+- Keychain write path for exchanged desktop session tokens
+- SQLite persistence for reports, network calls, endpoints, and candidates
+- Durable scan backoff and 6-hour successful re-scan cadence
+- Budget and policy enforcement before real purchases
+- Release signing, archiving, and notarization
+
+## Requirements
+
+- macOS with Xcode 26.x
+- Swift 5 target settings from the checked-in Xcode project
+- Network access for scanner probes
+
+The app target intentionally has App Sandbox disabled because v0.0.1 writes logs to `~/Library/Logs/DialtoneApp Desktop/` and performs outbound scanner requests.
+
+## Build
+
+```sh
+xcodebuild -project DialtoneApp.xcodeproj \
+  -scheme DialtoneApp \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  build
+```
+
+The current build has been verified with that command.
+
+## Run
+
+Open the project in Xcode and run the `DialtoneApp` scheme, or run the debug app from DerivedData after building.
+
+On launch, the app starts scanning these high-signal domains first:
+
+- `stableemail.dev`
+- `renderself.com`
+- `dialtoneapp.com`
+- `www.inerrata.ai`
+- `anybrowse.dev`
+- `x402.quicknode.com`
+- `emc2ai.io`
+- `x402.aibtc.com`
+- `well-knowns.resolved.sh`
+- `publish.new`
+
+The remaining hard-coded corpus is scanned afterward on a conservative cadence.
+
+## Logs
+
+Logs are written locally under:
+
+```text
+~/Library/Logs/DialtoneApp Desktop/
+```
+
+Files:
+
+- `agent.log`: scanner lifecycle, candidate creation, dedupe decisions, red-dot state, user decisions
+- `network.log`: one structured line per network call
+- `purchases.log`: approval and purchase-flow events
+
+The app also creates:
+
+```text
+~/Library/Application Support/DialtoneApp Desktop/
+```
+
+Use the menu bar option `View Log` to open the in-app log window, or `Reveal Log Files` to open the log directory in Finder.
+
+## Purchase Flow
+
+The desktop app does not charge cards directly.
+
+`Yes, buy` starts `PurchaseCoordinator`, which currently:
+
+1. Checks for a desktop session token in Keychain.
+2. Opens `https://dialtoneapp.com/login` if no token exists.
+3. Checks `GET https://dialtoneapp.com/api/users/me/network-card` when logged in.
+4. Opens `https://dialtoneapp.com/bot-buyer` if no saved bot-buyer card exists.
+5. Sends supported purchase requests to `POST https://dialtoneapp.com/api/users/me/bot-purchases`.
+
+Supported result states are modeled in the app:
+
+- `purchased`
+- `needs_login`
+- `needs_bot_buyer_card`
+- `needs_browser_checkout`
+- `unsupported_merchant`
+- `policy_blocked`
+- `failed`
+
+## Project Structure
+
+```text
+DialtoneApp/
+  ContentView.swift          Main app UI, found-item cards, menu content
+  DialtoneAppApp.swift       App entry point, windows, menu bar extra
+  DiscoveryScanner.swift     Domain probes, parsing, candidate extraction
+  DomainCorpus.swift         Hard-coded v0.0.1 scan corpus
+  LocalLogStore.swift        Local file logging and log window data source
+  LogWindow.swift            In-app log viewer
+  PurchaseCoordinator.swift  Auth/card/purchase-flow scaffold
+  ReleaseModels.swift        Money, endpoint, candidate, log, purchase models
+docs/
+  plan.md                    v0.0.1 release plan and progress notes
+  idea.md                    Product notes
+```
+
+## Development Notes
+
+- Keep scanner changes conservative; this app is intentionally proving the loop, not arbitrary web automation.
+- Do not log card data, auth tokens, payment signatures, `Authorization`, or `Set-Cookie` values.
+- Prefer structured manifests and product feeds over brittle HTML scraping.
+- Unsupported merchants should produce a useful debug record and a clear browser handoff or unsupported state.
+- After scanner changes, restart the running debug app so it uses the newly built code.
+
+## License
+
+See [LICENSE](LICENSE).
