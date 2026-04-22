@@ -6,16 +6,14 @@ import Security
 final class PurchaseCoordinator {
     private let logStore: LocalLogStore
     private let session: URLSession
-    private let loginURL = URL(string: "https://dialtoneapp.com/login")!
-    private let botBuyerURL = URL(string: "https://dialtoneapp.com/bot-buyer")!
-    private let desktopLoginRequestURL = URL(string: "https://dialtoneapp.com/api/auth/desktop-login-requests")!
-    private let desktopLoginExchangeURL = URL(string: "https://dialtoneapp.com/api/auth/desktop-login-requests/exchange")!
+    private let environment: AppEnvironment
     private let desktopCallbackURL = URL(string: "dialtoneapp-desktop://auth/callback")!
     private let pendingDesktopLoginStateKey = "dialtoneapp.desktop_login.state"
     private let pendingDesktopLoginRequestIDKey = "dialtoneapp.desktop_login.request_id"
 
-    init(logStore: LocalLogStore) {
+    init(logStore: LocalLogStore, environment: AppEnvironment = .current) {
         self.logStore = logStore
+        self.environment = environment
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 20
@@ -59,6 +57,7 @@ final class PurchaseCoordinator {
         do {
             let hasCard = try await checkSavedCard(token: token, candidate: candidate, requestID: purchaseRequestID)
             guard hasCard else {
+                let botBuyerURL = environment.frontendPath("bot-buyer")
                 NSWorkspace.shared.open(botBuyerURL)
                 let result = PurchaseFlowResult(
                     state: .needsBotBuyerCard,
@@ -131,6 +130,8 @@ final class PurchaseCoordinator {
     }
 
     private func openDesktopLogin() async -> URL {
+        let loginURL = environment.frontendPath("login")
+
         do {
             let desktopLogin = try await createDesktopLoginRequest()
             NSWorkspace.shared.open(desktopLogin.loginURL)
@@ -150,7 +151,7 @@ final class PurchaseCoordinator {
 
     private func createDesktopLoginRequest() async throws -> DesktopLoginRequest {
         let state = UUID().uuidString
-        var request = URLRequest(url: desktopLoginRequestURL)
+        var request = URLRequest(url: environment.apiPath("api/auth/desktop-login-requests"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -159,7 +160,8 @@ final class PurchaseCoordinator {
             "app_name": "DialtoneApp Desktop",
             "app_version": appVersion,
             "callback_url": desktopCallbackURL.absoluteString,
-            "state": state
+            "state": state,
+            "frontend_url": environment.frontendURL.absoluteString
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
@@ -189,24 +191,31 @@ final class PurchaseCoordinator {
         let responseLoginURL = stringValue(object["login_url"])
             ?? stringValue(object["loginUrl"])
             ?? stringValue(object["url"])
+        let responseLoginComponents = responseLoginURL
+            .flatMap(URL.init(string:))
+            .flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        let responseRequestID = requestID
+            ?? responseLoginComponents?.queryItems?.trimmedValue(named: "desktop_request_id")
 
-        guard requestID != nil || responseLoginURL != nil else {
+        guard responseRequestID != nil || responseLoginURL != nil else {
             throw DesktopAuthError.invalidResponse("desktop login response did not include a request id or login URL")
         }
 
-        let handoffURL = responseLoginURL.flatMap(URL.init(string:))
-            ?? makeLoginURL(desktopRequestID: requestID)
+        let handoffURL = makeLoginURL(
+            desktopRequestID: responseRequestID,
+            preserving: responseLoginComponents?.queryItems ?? []
+        )
 
         UserDefaults.standard.set(responseState, forKey: pendingDesktopLoginStateKey)
-        if let requestID {
-            UserDefaults.standard.set(requestID, forKey: pendingDesktopLoginRequestIDKey)
+        if let responseRequestID {
+            UserDefaults.standard.set(responseRequestID, forKey: pendingDesktopLoginRequestIDKey)
         }
 
-        return DesktopLoginRequest(requestID: requestID, state: responseState, loginURL: handoffURL)
+        return DesktopLoginRequest(requestID: responseRequestID, state: responseState, loginURL: handoffURL)
     }
 
     private func exchangeDesktopAuthCode(code: String, state: String?) async throws -> String {
-        var request = URLRequest(url: desktopLoginExchangeURL)
+        var request = URLRequest(url: environment.apiPath("api/auth/desktop-login-requests/exchange"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -252,8 +261,7 @@ final class PurchaseCoordinator {
     }
 
     private func checkSavedCard(token: String, candidate: PurchaseCandidate, requestID: String) async throws -> Bool {
-        let url = URL(string: "https://dialtoneapp.com/api/users/me/network-card")!
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: environment.apiPath("api/users/me/network-card"))
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -294,8 +302,7 @@ final class PurchaseCoordinator {
         token: String,
         purchaseRequestID: String
     ) async throws -> PurchaseFlowResult {
-        let url = URL(string: "https://dialtoneapp.com/api/users/me/bot-purchases")!
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: environment.apiPath("api/users/me/bot-purchases"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -403,14 +410,14 @@ final class PurchaseCoordinator {
         }
     }
 
-    private func makeLoginURL(desktopRequestID: String?) -> URL {
-        var components = URLComponents(url: loginURL, resolvingAgainstBaseURL: false)
-        var queryItems = components?.queryItems ?? []
+    private func makeLoginURL(desktopRequestID: String?, preserving queryItems: [URLQueryItem] = []) -> URL {
+        var components = URLComponents(url: environment.frontendPath("login"), resolvingAgainstBaseURL: false)
+        var queryItems = queryItems.filter { $0.name != "desktop_request_id" }
         if let desktopRequestID {
             queryItems.append(URLQueryItem(name: "desktop_request_id", value: desktopRequestID))
         }
-        components?.queryItems = queryItems
-        return components?.url ?? loginURL
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems
+        return components?.url ?? environment.frontendPath("login")
     }
 
     private func isDesktopAuthCallback(_ url: URL) -> Bool {

@@ -33,7 +33,7 @@
 - Candidate cards support `No`, `Yes, buy`, and `Open source`.
 - `No` marks the candidate dismissed and logs the decision.
 - `Yes, buy` starts a `PurchaseCoordinator` flow and logs the decision.
-- Purchase flow currently checks for a Keychain desktop session token, opens `https://dialtoneapp.com/login` if missing, checks the saved bot-buyer card endpoint if logged in, opens `https://dialtoneapp.com/bot-buyer` if no saved card is reported, and posts purchase requests to the proposed DialtoneApp Network endpoint.
+- Purchase flow currently checks for a Keychain desktop session token, opens `{FRONTEND_URL}/login` if missing, checks the saved bot-buyer card endpoint if logged in, opens `{FRONTEND_URL}/bot-buyer` if no saved card is reported, and posts purchase requests to the proposed DialtoneApp Network endpoint.
 - Result states are modeled and displayed: purchased, needs login, needs bot-buyer card, needs browser checkout, unsupported merchant, and failed.
 - App sandbox is disabled for this target so the scanner can make outbound requests and write the required local log paths.
 
@@ -113,6 +113,13 @@
 - Added desktop auth callback handling, code exchange, state checking when provided, and Keychain storage for exchanged desktop session tokens.
 - Logged desktop login request, code exchange, handoff, and Keychain outcomes without writing auth tokens to local logs.
 
+### Environment config - April 22, 2026
+
+- Added `AppEnvironment` so the app can read `FRONTEND_URL` and `API_BASE_URL` from process environment variables or generated Info.plist keys.
+- Set Debug `FRONTEND_URL` to `http://localhost:5173` for local browser login and bot-buyer redirects.
+- Set Release `FRONTEND_URL` to `https://dialtoneapp.com` so public builds can switch to production without touching purchase-flow code.
+- Kept `API_BASE_URL` separate from `FRONTEND_URL`; API calls still default to `https://dialtoneapp.com`.
+
 ### Still pending for public v0.0.1
 
 - Backend implementation for desktop login request creation and code-exchange endpoints.
@@ -157,8 +164,8 @@ This release does not need broad personalization, category search, ranking intel
 - Product/action cards with merchant, title, price, description, image if available, source URL, and discovered payment/checkout method.
 - Approval UI: `No` dismisses or snoozes; `Yes, buy` starts the purchase flow.
 - DialtoneApp auth/card gate:
-  - If the user is not logged into DialtoneApp Desktop, open the default browser to `https://dialtoneapp.com/login`.
-  - If the user is logged in but has no saved bot-buyer card, open `https://dialtoneapp.com/bot-buyer`.
+  - If the user is not logged into DialtoneApp Desktop, open the default browser to `{FRONTEND_URL}/login`.
+  - If the user is logged in but has no saved bot-buyer card, open `{FRONTEND_URL}/bot-buyer`.
   - If the user is logged in and has a saved bot-buyer card, send a purchase request through DialtoneApp Network.
 - A clear result state after approval: purchased, needs browser handoff, failed, or unsupported.
 
@@ -542,7 +549,7 @@ Implement a desktop login bridge:
 2. Desktop app opens:
 
 ```text
-https://dialtoneapp.com/login?desktop_request_id=...
+{FRONTEND_URL}/login?desktop_request_id=...
 ```
 
 3. User completes OTP or Google login in the browser.
@@ -555,7 +562,7 @@ dialtoneapp-desktop://auth/callback?code=...
 5. Desktop app exchanges the code for a desktop session token.
 6. Store the token in Keychain.
 
-If the app has no valid token, `Yes, buy` opens `https://dialtoneapp.com/login`.
+If the app has no valid token, `Yes, buy` opens `{FRONTEND_URL}/login`.
 
 ### Saved card check
 
@@ -568,7 +575,7 @@ GET https://dialtoneapp.com/api/users/me/network-card
 If no saved card exists, open:
 
 ```text
-https://dialtoneapp.com/bot-buyer
+{FRONTEND_URL}/bot-buyer
 ```
 
 The UI should say the user needs to add a saved bot-buyer card before DialtoneApp Desktop can buy on their behalf.
@@ -620,8 +627,8 @@ Backend responsibilities:
 The desktop app should handle these backend results:
 
 - `purchased`: show receipt and log success.
-- `needs_login`: open `https://dialtoneapp.com/login`.
-- `needs_bot_buyer_card`: open `https://dialtoneapp.com/bot-buyer`.
+- `needs_login`: open `{FRONTEND_URL}/login`.
+- `needs_bot_buyer_card`: open `{FRONTEND_URL}/bot-buyer`.
 - `needs_browser_checkout`: open returned checkout URL.
 - `unsupported_merchant`: explain that the item was discovered but cannot be purchased automatically yet.
 - `failed`: show error and log request id.
