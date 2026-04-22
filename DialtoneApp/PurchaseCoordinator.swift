@@ -210,7 +210,7 @@ final class PurchaseCoordinator {
         case 402:
             return .needsBotBuyerCard
         case 409:
-            return .policyBlocked
+            return .failed
         case 501:
             return .unsupportedMerchant
         default:
@@ -230,8 +230,6 @@ final class PurchaseCoordinator {
             return "This item was found, but v0.0.1 needs a browser checkout handoff."
         case .unsupportedMerchant:
             return "\(candidate.domain) is not supported by DialtoneApp Network yet."
-        case .policyBlocked:
-            return "The purchase was blocked by policy or budget."
         case .failed:
             return "Purchase request failed."
         }

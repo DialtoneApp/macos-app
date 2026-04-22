@@ -34,7 +34,7 @@
 - `No` marks the candidate dismissed and logs the decision.
 - `Yes, buy` starts a `PurchaseCoordinator` flow and logs the decision.
 - Purchase flow currently checks for a Keychain desktop session token, opens `https://dialtoneapp.com/login` if missing, checks the saved bot-buyer card endpoint if logged in, opens `https://dialtoneapp.com/bot-buyer` if no saved card is reported, and posts purchase requests to the proposed DialtoneApp Network endpoint.
-- Result states are modeled and displayed: purchased, needs login, needs bot-buyer card, needs browser checkout, unsupported merchant, policy blocked, and failed.
+- Result states are modeled and displayed: purchased, needs login, needs bot-buyer card, needs browser checkout, unsupported merchant, and failed.
 - App sandbox is disabled for this target so the scanner can make outbound requests and write the required local log paths.
 
 ### Verified
@@ -98,6 +98,13 @@
 - Confirmed no fresh trailing-apostrophe Quicknode URL fetches appeared in the new network-log tail.
 - Remaining scanner cleanup: Shopify-style variant-only titles such as `Extra Small`, `Small`, `Navy / XL`, and similar variants can still leak as separate product candidates on broad product feeds.
 
+### v0.0.1 scope cleanup - April 22, 2026
+
+- Reviewed the original release prompt and narrowed the active plan to the public v0.0.1 bot-buying loop.
+- Removed budget, auto-approval, category personalization, merchant allowlist, and approval-policy controls from the active app UI.
+- Updated the plan so budgets, auto-approval rules, and category personalization are explicitly out of scope for v0.0.1.
+- Kept the app focused on `Found Items`, `Activity`, local logs, red-dot notification, and the `No` / `Yes, buy` flow.
+
 ### Still pending for public v0.0.1
 
 - Real desktop login request creation endpoint.
@@ -105,10 +112,9 @@
 - Auth callback handling and code exchange.
 - Keychain write path for the exchanged desktop session token.
 - Durable SQLite store for domain reports, network calls, discovered API calls, and purchase candidates.
-- `settings.json` persistence for scan enabled, budget, approval settings, and dismissed candidates.
+- `settings.json` persistence for scan enabled and dismissed candidates.
 - Per-domain successful re-scan cadence of 6 hours.
 - Failed-domain exponential backoff persistence.
-- Budget and policy enforcement before sending any real purchase request.
 - Backend contract hardening for `GET /api/users/me/network-card`.
 - Backend contract hardening for `POST /api/users/me/bot-purchases`.
 - Further x402 payment-required metadata parsing after another live-log pass.
@@ -148,7 +154,7 @@ This release does not need broad personalization, category search, ranking intel
   - If the user is not logged into DialtoneApp Desktop, open the default browser to `https://dialtoneapp.com/login`.
   - If the user is logged in but has no saved bot-buyer card, open `https://dialtoneapp.com/bot-buyer`.
   - If the user is logged in and has a saved bot-buyer card, send a purchase request through DialtoneApp Network.
-- A clear result state after approval: purchased, needs browser handoff, blocked by policy, failed, or unsupported.
+- A clear result state after approval: purchased, needs browser handoff, failed, or unsupported.
 
 ### Explicitly not required for v0.0.1
 
@@ -156,6 +162,7 @@ This release does not need broad personalization, category search, ranking intel
 - Personalized recommendations.
 - Full arbitrary web checkout automation.
 - Browser form filling.
+- Budgets, auto-approval rules, or category personalization.
 - Wallet custody.
 - x402 settlement from the desktop app itself.
 - Perfect extraction across every domain.
@@ -598,7 +605,6 @@ Backend responsibilities:
 
 - Verify the DialtoneApp user session.
 - Verify the user has a saved `bot-buyer` card.
-- Verify the requested item is within policy and budget.
 - Decide whether the merchant can be purchased by machine.
 - Execute the purchase when supported.
 - Return a receipt, order id, charge id, subscription id, or fallback reason.
@@ -612,7 +618,6 @@ The desktop app should handle these backend results:
 - `needs_bot_buyer_card`: open `https://dialtoneapp.com/bot-buyer`.
 - `needs_browser_checkout`: open returned checkout URL.
 - `unsupported_merchant`: explain that the item was discovered but cannot be purchased automatically yet.
-- `policy_blocked`: show budget or policy reason.
 - `failed`: show error and log request id.
 
 ### Public v0.0.1 honesty
@@ -625,7 +630,7 @@ Use a small local store under Application Support:
 
 - `domains.json`: hard-coded corpus plus last scan status.
 - `discoveries.sqlite`: domain reports, endpoints, candidates.
-- `settings.json`: scan enabled, budget, approval settings, dismissed candidates.
+- `settings.json`: scan enabled and dismissed candidates.
 - Keychain: DialtoneApp session token only.
 
 Tables:

@@ -9,54 +9,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-enum ShoppingCategory: String, CaseIterable, Identifiable {
-    case household = "Household"
-    case digitalTools = "Digital tools"
-    case aiServices = "AI services"
-    case travel = "Travel"
-    case apparel = "Apparel"
-    case electronics = "Electronics"
-
-    var id: String { rawValue }
-
-    var icon: String {
-        switch self {
-        case .household: return "house"
-        case .digitalTools: return "keyboard"
-        case .aiServices: return "cpu"
-        case .travel: return "airplane"
-        case .apparel: return "tshirt"
-        case .electronics: return "desktopcomputer"
-        }
-    }
-}
-
-enum ApprovalMode: String, CaseIterable, Identifiable {
-    case suggestOnly = "Suggest only"
-    case askEveryTime = "Ask every time"
-    case autoApproveSmall = "Auto-approve small buys"
-
-    var id: String { rawValue }
-}
-
-struct ShoppingSuggestion: Identifiable {
-    let id = UUID()
-    let title: String
-    let merchant: String
-    let price: String
-    let protocolName: String
-    let risk: String
-    let icon: String
-    let accent: Color
-}
-
-struct ActivityItem: Identifiable {
-    let id = UUID()
-    let title: String
-    let detail: String
-    let icon: String
-}
-
 @MainActor
 final class BotShoppingModel: ObservableObject {
     @Published var botEnabled = true {
@@ -64,17 +16,6 @@ final class BotShoppingModel: ObservableObject {
             scanner?.setEnabled(botEnabled)
         }
     }
-    @Published var weeklyBudget = 75.0
-    @Published var autoApproveLimit = 12.0
-    @Published var approvalMode: ApprovalMode = .askEveryTime
-    @Published var selectedCategories: Set<ShoppingCategory> = [.household, .digitalTools, .aiServices]
-    @Published var merchantAllowlist = "dialtoneapp.com, stableemail.dev, anybrowse.dev"
-    @Published var requireApprovalForPhysicalGoods = true
-    @Published var requireApprovalForRecurringPayments = true
-    @Published var requireApprovalOverLimit = true
-    @Published var scanUCP = true
-    @Published var scanX402 = true
-    @Published var scanOpenAPI = true
     @Published var status = "Starting scanner"
     @Published private(set) var candidates: [PurchaseCandidate] = []
     @Published private(set) var reports: [DomainDiscoveryReport] = []
@@ -110,23 +51,6 @@ final class BotShoppingModel: ObservableObject {
         )
 
         scanner?.startIfNeeded()
-    }
-
-    var selectedCategorySummary: String {
-        let count = selectedCategories.count
-        if count == ShoppingCategory.allCases.count {
-            return "All categories"
-        }
-
-        return "\(count) active categories"
-    }
-
-    var weeklyBudgetText: String {
-        "$\(Int(weeklyBudget)) / week"
-    }
-
-    var autoApproveText: String {
-        "$\(Int(autoApproveLimit))"
     }
 
     var pendingCandidates: [PurchaseCandidate] {
@@ -205,7 +129,7 @@ final class BotShoppingModel: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject private var model: BotShoppingModel
-    @State private var selectedSection: AppSection? = .setup
+    @State private var selectedSection: AppSection? = .discover
 
     var body: some View {
         NavigationSplitView {
@@ -217,13 +141,9 @@ struct ContentView: View {
                     HeroPanel()
                     StatusStrip()
 
-                    switch selectedSection ?? .setup {
-                    case .setup:
-                        SetupScreen()
+                    switch selectedSection ?? .discover {
                     case .discover:
                         DiscoveryScreen()
-                    case .approvals:
-                        ApprovalsScreen()
                     case .activity:
                         ActivityScreen()
                     }
@@ -238,18 +158,14 @@ struct ContentView: View {
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case setup = "Setup"
     case discover = "Found Items"
-    case approvals = "Approvals"
     case activity = "Activity"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .setup: return "slider.horizontal.3"
         case .discover: return "sparkle.magnifyingglass"
-        case .approvals: return "checkmark.seal"
         case .activity: return "clock.arrow.circlepath"
         }
     }
@@ -292,7 +208,7 @@ struct HeroPanel: View {
                             .scaledToFit()
                             .frame(width: 16, height: 16)
 
-                        Text("Bot with a budget")
+                        Text("Bot-buying scanner")
                     }
                     .font(.headline)
                     .foregroundStyle(.teal)
@@ -325,7 +241,6 @@ struct HeroPanel: View {
             }
 
             HStack(spacing: 12) {
-                MetricPill(icon: "wallet.pass", label: "Budget", value: model.weeklyBudgetText, tint: .green)
                 MetricPill(icon: "sparkle.magnifyingglass", label: "Found", value: "\(model.candidates.count) items", tint: .blue)
                 MetricPill(icon: "circle.fill", label: "Unseen", value: "\(model.unseenCandidateCount)", tint: .red)
                 MetricPill(icon: "network", label: "Scanned", value: "\(model.scannedDomainCount) domains", tint: .orange)
@@ -356,71 +271,6 @@ struct StatusStrip: View {
     }
 }
 
-struct SetupScreen: View {
-    @EnvironmentObject private var model: BotShoppingModel
-
-    var body: some View {
-        VStack(spacing: 18) {
-            HStack(alignment: .top, spacing: 18) {
-                Card(title: "Budget", icon: "wallet.pass") {
-                    SliderRow(
-                        title: "Weekly spend",
-                        value: $model.weeklyBudget,
-                        range: 10...500,
-                        displayValue: model.weeklyBudgetText
-                    )
-
-                    SliderRow(
-                        title: "Auto-approve cap",
-                        value: $model.autoApproveLimit,
-                        range: 1...100,
-                        displayValue: model.autoApproveText
-                    )
-
-                    Picker("Approval mode", selection: $model.approvalMode) {
-                        ForEach(ApprovalMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                Card(title: "Where to look", icon: "scope") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(ShoppingCategory.allCases) { category in
-                            CategoryToggle(category: category)
-                        }
-                    }
-                }
-            }
-
-            HStack(alignment: .top, spacing: 18) {
-                Card(title: "Allowed merchants", icon: "building.2") {
-                    TextEditor(text: $model.merchantAllowlist)
-                        .font(.system(.body, design: .monospaced))
-                        .scrollContentBackground(.hidden)
-                        .frame(minHeight: 118)
-                        .padding(8)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-
-                Card(title: "Discovery surfaces", icon: "network") {
-                    Toggle("UCP shopping files", isOn: $model.scanUCP)
-                    Toggle("x402 payment APIs", isOn: $model.scanX402)
-                    Toggle("OpenAPI and commerce manifests", isOn: $model.scanOpenAPI)
-
-                    Divider()
-
-                    Toggle("Ask for physical goods", isOn: $model.requireApprovalForPhysicalGoods)
-                    Toggle("Ask for recurring payments", isOn: $model.requireApprovalForRecurringPayments)
-                    Toggle("Ask above auto cap", isOn: $model.requireApprovalOverLimit)
-                }
-            }
-        }
-    }
-}
-
 struct DiscoveryScreen: View {
     @EnvironmentObject private var model: BotShoppingModel
 
@@ -437,41 +287,6 @@ struct DiscoveryScreen: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 14)], spacing: 14) {
                     ForEach(model.candidates) { candidate in
                         CandidateCard(candidate: candidate)
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct ApprovalsScreen: View {
-    @EnvironmentObject private var model: BotShoppingModel
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            Card(title: "Approval policy", icon: "checkmark.seal") {
-                Picker("Mode", selection: $model.approvalMode) {
-                    ForEach(ApprovalMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-
-                Divider()
-
-                Toggle("Require approval for physical delivery", isOn: $model.requireApprovalForPhysicalGoods)
-                Toggle("Require approval for subscriptions", isOn: $model.requireApprovalForRecurringPayments)
-                Toggle("Require approval over \(model.autoApproveText)", isOn: $model.requireApprovalOverLimit)
-            }
-
-            Card(title: "Pending queue", icon: "tray") {
-                if model.pendingCandidates.isEmpty {
-                    Text("No pending candidates yet. The scanner is still working through the high-signal domains.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(model.pendingCandidates.prefix(8)) { candidate in
-                        ApprovalRow(candidate: candidate)
                     }
                 }
             }
@@ -568,50 +383,6 @@ struct MetricPill: View {
         .padding(.vertical, 10)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-struct SliderRow: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let displayValue: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(displayValue)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            Slider(value: $value, in: range, step: 1)
-        }
-    }
-}
-
-struct CategoryToggle: View {
-    @EnvironmentObject private var model: BotShoppingModel
-    let category: ShoppingCategory
-
-    var body: some View {
-        Toggle(isOn: categoryBinding) {
-            Label(category.rawValue, systemImage: category.icon)
-        }
-    }
-
-    private var categoryBinding: Binding<Bool> {
-        Binding(
-            get: { model.selectedCategories.contains(category) },
-            set: { isOn in
-                if isOn {
-                    model.selectedCategories.insert(category)
-                } else {
-                    model.selectedCategories.remove(category)
-                }
-            }
-        )
     }
 }
 
@@ -766,7 +537,7 @@ struct ResultPill: View {
         case .purchased: return "checkmark.seal.fill"
         case .failed: return "exclamationmark.triangle.fill"
         case .needsLogin, .needsBotBuyerCard, .needsBrowserCheckout: return "arrow.up.right.square"
-        case .unsupportedMerchant, .policyBlocked: return "hand.raised.fill"
+        case .unsupportedMerchant: return "hand.raised.fill"
         }
     }
 
@@ -775,42 +546,8 @@ struct ResultPill: View {
         case .purchased: return .green
         case .failed: return .red
         case .needsLogin, .needsBotBuyerCard, .needsBrowserCheckout: return .orange
-        case .unsupportedMerchant, .policyBlocked: return .yellow
+        case .unsupportedMerchant: return .yellow
         }
-    }
-}
-
-struct ApprovalRow: View {
-    @EnvironmentObject private var model: BotShoppingModel
-    let candidate: PurchaseCandidate
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "hourglass")
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(candidate.title)
-                    .font(.headline)
-                Text("\(candidate.domain) - \(candidate.sourceKind.rawValue)")
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(candidate.price?.displayValue ?? "No price")
-                .font(.system(.body, design: .monospaced).weight(.semibold))
-            Button {
-                model.approve(candidate)
-            } label: {
-                Image(systemName: "checkmark")
-            }
-            Button {
-                model.dismiss(candidate)
-            } label: {
-                Image(systemName: "xmark")
-            }
-        }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -830,11 +567,7 @@ struct MenuBarView: View {
                 Spacer()
             }
 
-            HStack {
-                Label(model.weeklyBudgetText, systemImage: "wallet.pass")
-                Spacer()
-                Label(model.botEnabled ? "Watching" : "Paused", systemImage: model.botEnabled ? "eye" : "pause")
-            }
+            Label(model.botEnabled ? "Watching" : "Paused", systemImage: model.botEnabled ? "eye" : "pause")
             .foregroundStyle(.secondary)
 
             HStack {

@@ -191,7 +191,6 @@ enum PurchaseResultState: String, Codable, Hashable {
     case needsBotBuyerCard = "needs_bot_buyer_card"
     case needsBrowserCheckout = "needs_browser_checkout"
     case unsupportedMerchant = "unsupported_merchant"
-    case policyBlocked = "policy_blocked"
     case failed
 }
 

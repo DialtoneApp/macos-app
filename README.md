@@ -118,7 +118,6 @@ Supported result states are modeled in the app:
 - `needs_bot_buyer_card`
 - `needs_browser_checkout`
 - `unsupported_merchant`
-- `policy_blocked`
 - `failed`
 
 ## Project Structure
