@@ -224,7 +224,6 @@ struct HeroPanel: View {
                     HStack(spacing: 6) {
                         Image("MenuBarIcon")
                             .resizable()
-                            .renderingMode(.template)
                             .scaledToFit()
                             .frame(width: 16, height: 16)
 
@@ -634,10 +633,8 @@ struct MenuBarView: View {
             HStack {
                 Image("MenuBarIcon")
                     .resizable()
-                    .renderingMode(.template)
                     .scaledToFit()
                     .frame(width: 16, height: 16)
-                    .foregroundStyle(.teal)
                 Text("DialtoneApp Desktop")
                     .font(.headline)
                 Spacer()
