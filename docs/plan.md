@@ -127,6 +127,7 @@
 - Updated the web login page so email and Google login can complete a `desktop_request_id` flow by redirecting to `dialtoneapp-desktop://auth/callback?...`.
 - Preserved desktop login query parameters through the production Google redirect page.
 - Updated the macOS app to include the callback `desktop_request_id` when exchanging the one-time callback code.
+- Added desktop-login debug logs in macOS `purchases.log`, browser console, and worker console so missing request rows, fallback `/login` opens, callback redirects, and exchange failures can be traced without logging tokens or one-time codes.
 
 ### Still pending for public v0.0.1
 

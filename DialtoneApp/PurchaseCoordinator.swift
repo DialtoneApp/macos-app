@@ -18,6 +18,12 @@ final class PurchaseCoordinator {
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 20
         session = URLSession(configuration: configuration)
+
+        logStore.append(.purchases, "Purchase coordinator configured", metadata: [
+            "frontend_url": environment.frontendURL.absoluteString,
+            "api_base_url": environment.apiBaseURL.absoluteString,
+            "callback_url": desktopCallbackURL.absoluteString
+        ])
     }
 
     func reject(_ candidate: PurchaseCandidate) {
@@ -43,6 +49,10 @@ final class PurchaseCoordinator {
         ])
 
         guard let token = loadDesktopSessionToken(), !token.isEmpty else {
+            logStore.append(.purchases, level: .warning, "No desktop session token; starting desktop login", metadata: [
+                "candidate_id": candidate.id.uuidString,
+                "purchase_request_id": purchaseRequestID
+            ])
             let authURL = await openDesktopLogin()
             let result = PurchaseFlowResult(
                 state: .needsLogin,
@@ -93,6 +103,15 @@ final class PurchaseCoordinator {
         }
 
         let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let callbackCode = queryItems.trimmedValue(named: "code")
+        let returnedState = queryItems.trimmedValue(named: "state")
+        let callbackRequestID = queryItems.trimmedValue(named: "desktop_request_id")
+
+        logStore.append(.purchases, "Desktop login callback received", metadata: [
+            "desktop_request_id": callbackRequestID ?? "none",
+            "code_present": callbackCode == nil ? "false" : "true",
+            "state_present": returnedState == nil ? "false" : "true"
+        ])
 
         if let error = queryItems.trimmedValue(named: "error") {
             logStore.append(.purchases, level: .error, "Desktop login callback returned an error", metadata: [
@@ -102,13 +121,11 @@ final class PurchaseCoordinator {
             return true
         }
 
-        guard let code = queryItems.trimmedValue(named: "code") else {
+        guard let code = callbackCode else {
             logStore.append(.purchases, level: .error, "Desktop login callback missing code")
             return true
         }
 
-        let returnedState = queryItems.trimmedValue(named: "state")
-        let callbackRequestID = queryItems.trimmedValue(named: "desktop_request_id")
         if let expectedState = UserDefaults.standard.string(forKey: pendingDesktopLoginStateKey),
            let returnedState,
            returnedState != expectedState {
@@ -144,7 +161,8 @@ final class PurchaseCoordinator {
         } catch {
             NSWorkspace.shared.open(loginURL)
             logStore.append(.purchases, level: .warning, "Desktop login request failed; opened fallback login", metadata: [
-                "error": error.localizedDescription
+                "error": error.localizedDescription,
+                "fallback_url": loginURL.absoluteString
             ])
             return loginURL
         }
@@ -152,7 +170,8 @@ final class PurchaseCoordinator {
 
     private func createDesktopLoginRequest() async throws -> DesktopLoginRequest {
         let state = UUID().uuidString
-        var request = URLRequest(url: environment.apiPath("api/auth/desktop-login-requests"))
+        let requestURL = environment.apiPath("api/auth/desktop-login-requests")
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -166,6 +185,13 @@ final class PurchaseCoordinator {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
+        logStore.append(.purchases, "Desktop login request starting", metadata: [
+            "url": requestURL.absoluteString,
+            "frontend_url": environment.frontendURL.absoluteString,
+            "callback_url": desktopCallbackURL.absoluteString,
+            "state_set": "true"
+        ])
+
         let started = Date()
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -174,7 +200,8 @@ final class PurchaseCoordinator {
         logStore.append(.purchases, level: (200..<300).contains(status) ? .success : .warning, "Desktop login request completed", metadata: [
             "status": "\(status)",
             "duration_ms": "\(durationMS)",
-            "bytes": "\(data.count)"
+            "bytes": "\(data.count)",
+            "body_preview": responsePreview(data)
         ])
 
         guard (200..<300).contains(status) else {
@@ -207,6 +234,12 @@ final class PurchaseCoordinator {
             preserving: responseLoginComponents?.queryItems ?? []
         )
 
+        logStore.append(.purchases, level: .success, "Desktop login response parsed", metadata: [
+            "desktop_request_id": responseRequestID ?? "none",
+            "login_url": handoffURL.absoluteString,
+            "state_set": responseState.isEmpty ? "false" : "true"
+        ])
+
         UserDefaults.standard.set(responseState, forKey: pendingDesktopLoginStateKey)
         if let responseRequestID {
             UserDefaults.standard.set(responseRequestID, forKey: pendingDesktopLoginRequestIDKey)
@@ -232,6 +265,12 @@ final class PurchaseCoordinator {
             body["desktop_request_id"] = requestID
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+
+        logStore.append(.purchases, "Desktop login code exchange starting", metadata: [
+            "url": request.url?.absoluteString ?? "none",
+            "desktop_request_id": body["desktop_request_id"] ?? "none",
+            "state_present": state == nil ? "false" : "true"
+        ])
 
         let started = Date()
         let (data, response) = try await session.data(for: request)
@@ -506,6 +545,18 @@ final class PurchaseCoordinator {
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.1"
+    }
+
+    private func responsePreview(_ data: Data) -> String {
+        guard !data.isEmpty else { return "empty" }
+        guard let text = String(data: data, encoding: .utf8) else { return "non_utf8" }
+
+        let compact = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return String(compact.prefix(300))
     }
 
     private func stringValue(_ value: Any?) -> String? {
