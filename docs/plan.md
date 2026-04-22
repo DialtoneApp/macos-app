@@ -118,7 +118,7 @@
 - Added `AppEnvironment` so the app can read `FRONTEND_URL` and `API_BASE_URL` from process environment variables or generated Info.plist keys.
 - Set Debug `FRONTEND_URL` to `http://localhost:5173` for local browser login and bot-buyer redirects.
 - Set Release `FRONTEND_URL` to `https://dialtoneapp.com` so public builds can switch to production without touching purchase-flow code.
-- Kept `API_BASE_URL` separate from `FRONTEND_URL`; Debug points both to `http://localhost:5173` and Release points both to `https://dialtoneapp.com`.
+- Kept `API_BASE_URL` separate from `FRONTEND_URL`; Debug uses `FRONTEND_URL=http://localhost:5173` for browser routes and `API_BASE_URL=http://localhost:8787` for the local Wrangler worker, while Release points both to `https://dialtoneapp.com`.
 
 ### Desktop login completion - April 22, 2026
 
@@ -129,7 +129,7 @@
 - Updated the macOS app to include the callback `desktop_request_id` when exchanging the one-time callback code.
 - Added desktop-login debug logs in macOS `purchases.log`, browser console, and worker console so missing request rows, fallback `/login` opens, callback redirects, and exchange failures can be traced without logging tokens or one-time codes.
 - Pulled live `purchases.log` and found the running Debug app was using `api_base_url=https://dialtoneapp.com`, causing `POST /api/auth/desktop-login-requests` to return `404` and fall back to plain local `/login` with no `desktop_request_id`.
-- Changed `AppEnvironment` so Debug defaults both `FRONTEND_URL` and `API_BASE_URL` to `http://localhost:5173` even when generated Info.plist keys are missing; Release defaults remain `https://dialtoneapp.com`.
+- Changed `AppEnvironment` so Debug defaults `FRONTEND_URL` to `http://localhost:5173` and `API_BASE_URL` to `http://localhost:8787` even when Info.plist keys are missing; Release defaults remain `https://dialtoneapp.com`.
 - Confirmed the macOS target uses Xcode-generated Info settings and corrected the target-level `CFBundleURLTypes` entry so the `dialtoneapp-desktop` callback scheme is generated from `project.pbxproj` instead of a separate `Info.plist`.
 - Re-tested the browser login handoff: the web side created and completed desktop login request rows, but `code_used_at` stayed empty and macOS logged no callback, proving the old built app was not registered for `dialtoneapp-desktop`.
 - Switched the app to a checked-in `Info.plist` with Debug/Release `API_BASE_URL` and `FRONTEND_URL` build settings after Xcode did not emit nested `CFBundleURLTypes` from generated target settings.

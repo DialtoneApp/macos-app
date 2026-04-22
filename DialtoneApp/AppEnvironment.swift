@@ -2,6 +2,7 @@ import Foundation
 
 struct AppEnvironment {
     static let developmentFrontendURL = URL(string: "http://localhost:5173")!
+    static let developmentAPIBaseURL = URL(string: "http://localhost:8787")!
     static let productionFrontendURL = URL(string: "https://dialtoneapp.com")!
 
     var frontendURL: URL
@@ -32,7 +33,7 @@ struct AppEnvironment {
 
     private static var defaultAPIBaseURL: URL {
         #if DEBUG
-        developmentFrontendURL
+        developmentAPIBaseURL
         #else
         productionFrontendURL
         #endif
