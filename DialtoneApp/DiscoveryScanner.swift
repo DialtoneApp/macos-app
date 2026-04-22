@@ -462,19 +462,22 @@ final class DomainScanner {
         guard !items.isEmpty else { return [] }
 
         let candidates = items.prefix(16).compactMap { item -> PurchaseCandidate? in
-            let resource = item["resource"] as? [String: Any]
+            let resourceObject = item["resource"] as? [String: Any]
+            let resourceURLString = stringValue(resourceObject?["url"]) ?? stringValue(item["resource"])
+            let metadata = item["metadata"] as? [String: Any]
             let rawTitle = stringValue(item["title"])
                 ?? stringValue(item["name"])
-                ?? stringValue(resource?["name"])
-                ?? stringValue(resource?["description"])
-                ?? x402TitleFromResourceURL(resource?["url"], sourceURL: sourceURL)
+                ?? stringValue(resourceObject?["name"])
+                ?? stringValue(metadata?["networkSlug"]).map { "JSON-RPC proxy - \($0)" }
+                ?? stringValue(resourceObject?["description"])
+                ?? x402TitleFromResourceURL(resourceURLString, sourceURL: sourceURL)
 
             guard let title = rawTitle else { return nil }
 
             let description = stringValue(item["description"])
-                ?? stringValue(resource?["description"])
-                ?? stringValue((item["metadata"] as? [String: Any])?["description"])
-            let productURL = stringValue(resource?["url"])
+                ?? stringValue(resourceObject?["description"])
+                ?? stringValue(metadata?["description"])
+            let productURL = resourceURLString
                 .flatMap { URL(string: $0, relativeTo: sourceURL)?.absoluteURL }
                 ?? stringValue(item["url"]).flatMap { URL(string: $0, relativeTo: sourceURL)?.absoluteURL }
             let price = x402MoneyHint(from: item)
@@ -677,9 +680,9 @@ final class DomainScanner {
     private func extractURLs(from text: String, baseURL: URL, domain: String) -> [URL] {
         var urls = OrderedURLSet()
         let patterns = [
-            #"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+"#,
+            #"https?://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%-]+"#,
             #"(?:href|src)=["']([^"']+)["']"#,
-            #"(?m)^\s*(/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+)"#
+            #"(?m)^\s*(/[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%-]+)"#
         ]
 
         for pattern in patterns {
@@ -702,6 +705,7 @@ final class DomainScanner {
     private func shouldFollow(_ url: URL, domain: String) -> Bool {
         guard url.scheme == "https" || url.scheme == "http" else { return false }
         guard url.host?.lowercased() == domain.lowercased() else { return false }
+        if containsURLQuote(url) { return false }
         if isBinary(contentType: nil, url: url) || looksLikeBinaryAssetURL(url) { return false }
         if looksLikeEditorialOrReportURL(url) { return false }
 
@@ -821,14 +825,19 @@ final class DomainScanner {
     private func cleanURLCandidate(_ value: String) -> String {
         var cleaned = value
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>"))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>“”‘’`"))
 
-        let trailingPunctuation = CharacterSet(charactersIn: ".,;:)]}")
+        let trailingPunctuation = CharacterSet(charactersIn: ".,;:)]}\"'’”`")
         while let last = cleaned.unicodeScalars.last, trailingPunctuation.contains(last) {
             cleaned.removeLast()
         }
 
         return cleaned
+    }
+
+    private func containsURLQuote(_ url: URL) -> Bool {
+        let value = url.absoluteString
+        return value.contains("'") || value.contains("\"") || value.contains("`") || value.contains("%27") || value.contains("%22")
     }
 
     private func stringValue(_ value: Any?) -> String? {
@@ -961,15 +970,14 @@ final class DomainScanner {
     }
 
     private func x402AcceptPrice(from accepts: [[String: Any]]) -> Money? {
-        let prioritized = accepts.sorted {
-            x402AssetPriority($0) > x402AssetPriority($1)
-        }
+        var best: (priority: Int, money: Money)?
 
-        for accept in prioritized {
+        for accept in accepts {
             let normalized = normalizedDictionary(accept)
             let asset = stringValue(normalized["asset"])
                 ?? stringValue(normalized["currency"])
                 ?? stringValue(normalized["token"])
+            let assetName = x402AssetName(from: accept)
             let amount = normalized["amount"]
                 ?? normalized["maxamountrequired"]
                 ?? normalized["max_amount_required"]
@@ -977,20 +985,27 @@ final class DomainScanner {
             let decimals = intValue(normalized["decimals"])
                 ?? intValue(normalized["assetdecimals"])
                 ?? intValue(normalized["asset_decimals"])
-                ?? defaultDecimals(forX402Asset: asset)
+                ?? defaultDecimals(forX402Asset: asset, assetName: assetName)
 
-            if let money = parseX402Amount(amount, asset: asset, decimals: decimals) {
-                return money
+            guard let money = parseX402Amount(amount, asset: asset, assetName: assetName, decimals: decimals) else {
+                continue
+            }
+
+            let priority = x402AssetPriority(accept)
+            if best == nil
+                || priority > best!.priority
+                || (priority == best!.priority && money.amount < best!.money.amount) {
+                best = (priority, money)
             }
         }
 
-        return nil
+        return best?.money
     }
 
-    private func parseX402Amount(_ value: Any?, asset: String?, decimals: Int?) -> Money? {
+    private func parseX402Amount(_ value: Any?, asset: String?, assetName: String?, decimals: Int?) -> Money? {
         guard let value else { return nil }
 
-        let currency = normalizedX402Currency(asset)
+        let currency = normalizedX402Currency(asset, assetName: assetName)
         guard let rawAmount = stringValue(value)?.replacingOccurrences(of: ",", with: ""),
               !rawAmount.isEmpty else {
             return nil
@@ -1012,11 +1027,22 @@ final class DomainScanner {
         return Money(amount: decimal / divisor, currency: currency)
     }
 
-    private func defaultDecimals(forX402Asset asset: String?) -> Int? {
+    private func defaultDecimals(forX402Asset asset: String?, assetName: String?) -> Int? {
+        let normalizedName = assetName?.lowercased() ?? ""
+        if normalizedName.contains("usdc")
+            || normalizedName.contains("usd coin")
+            || normalizedName.contains("global dollar") {
+            return 6
+        }
+
         guard let asset else { return nil }
         let normalized = asset.lowercased()
 
         if normalized.hasPrefix("usdc") || normalized == "usd" {
+            return 6
+        }
+
+        if normalized.hasPrefix("0x") || normalized.count >= 32 {
             return 6
         }
 
@@ -1031,11 +1057,24 @@ final class DomainScanner {
         return nil
     }
 
-    private func normalizedX402Currency(_ asset: String?) -> String {
+    private func normalizedX402Currency(_ asset: String?, assetName: String?) -> String {
+        let normalizedName = assetName?.lowercased() ?? ""
+        if normalizedName.contains("usdc") || normalizedName.contains("usd coin") {
+            return "USDC"
+        }
+
+        if normalizedName.contains("global dollar") {
+            return "USD"
+        }
+
         guard let asset, !asset.isEmpty else { return "USD" }
         let uppercased = asset.uppercased()
 
         if uppercased.hasPrefix("USDC") {
+            return "USDC"
+        }
+
+        if asset.lowercased().hasPrefix("0x") || asset.count >= 32 {
             return "USDC"
         }
 
@@ -1044,17 +1083,37 @@ final class DomainScanner {
 
     private func x402AssetPriority(_ accept: [String: Any]) -> Int {
         let normalized = normalizedDictionary(accept)
+        let assetName = x402AssetName(from: accept)?.lowercased() ?? ""
         let asset = (stringValue(normalized["asset"])
             ?? stringValue(normalized["currency"])
             ?? stringValue(normalized["token"])
             ?? "")
             .lowercased()
 
+        if assetName.contains("usdc")
+            || assetName.contains("usd coin")
+            || assetName.contains("global dollar") {
+            return 4
+        }
+
         if asset.hasPrefix("usdc") { return 4 }
+        if asset.hasPrefix("0x") || asset.count >= 32 { return 4 }
         if asset == "usd" { return 3 }
         if asset == "stx" { return 2 }
         if asset == "sbtc" || asset == "btc" { return 1 }
         return 0
+    }
+
+    private func x402AssetName(from accept: [String: Any]) -> String? {
+        if let extra = accept["extra"] as? [String: Any],
+           let name = stringValue(extra["name"]) {
+            return name
+        }
+
+        let normalized = normalizedDictionary(accept)
+        return stringValue(normalized["assetname"])
+            ?? stringValue(normalized["asset_name"])
+            ?? stringValue(normalized["name"])
     }
 
     private func acceptedRails(from item: [String: Any]) -> [String] {

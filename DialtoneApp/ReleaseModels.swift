@@ -335,7 +335,9 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         core = core.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let suffix, !core.localizedCaseInsensitiveContains(suffix) {
-            core += " - \(suffix)"
+            let suffixText = " - \(suffix)"
+            let coreLimit = max(32, limit - suffixText.count)
+            return truncate(core, limit: coreLimit) + suffixText
         }
 
         return truncate(core, limit: limit)

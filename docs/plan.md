@@ -75,6 +75,18 @@
 - Ran `git diff --check`; no whitespace errors were reported.
 - Note: the running debug app needs another restart before these x402/title parser changes show up in new logs.
 
+### Follow-up from post-restart x402 logs - April 22, 2026
+
+- Reviewed the new tail from the restarted app without truncating prior logs.
+- Confirmed x402 prices now appear for emc2ai agent-card skills, x402.aibtc manifest entries, and Well Knowns paid dataset endpoints.
+- Confirmed paid/free title prefixes are removed from x402.aibtc OpenAPI candidates and Well Knowns dataset titles are much shorter.
+- Added support for x402 manifests where `resource` is a URL string instead of an object, matching Quicknode discovery resources.
+- Added x402 stablecoin asset normalization for contract-address assets with `extra.name` metadata, and selected the lowest stablecoin-priced `accepts` entry for the candidate price.
+- Tightened URL extraction and follow filtering so trailing apostrophes/quotes from markdown or text cannot become fetched URLs.
+- Updated long-title compaction so short suffixes such as `download` and `query` are preserved after truncation.
+- Ran `git diff --check`; no whitespace errors were reported.
+- Note: restart the running debug app again before checking whether Quicknode now emits priced x402 candidates.
+
 ### Still pending for public v0.0.1
 
 - Real desktop login request creation endpoint.
