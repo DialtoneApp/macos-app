@@ -31,7 +31,7 @@ The first working slice is implemented:
 Still pending for v0.0.1:
 
 - Desktop login request creation
-- `dialtoneapp-desktop://auth/callback` URL scheme handling
+- [`dialtoneapp-desktop://auth/callback`](dialtoneapp-desktop://auth/callback) URL scheme handling
 - Keychain write path for exchanged desktop session tokens
 - SQLite persistence for reports, network calls, endpoints, and candidates
 - Durable scan backoff and 6-hour successful re-scan cadence
@@ -64,16 +64,16 @@ Open the project in Xcode and run the `DialtoneApp` scheme, or run the debug app
 
 On launch, the app starts scanning these high-signal domains first:
 
-- `stableemail.dev`
-- `renderself.com`
-- `dialtoneapp.com`
-- `www.inerrata.ai`
-- `anybrowse.dev`
-- `x402.quicknode.com`
-- `emc2ai.io`
-- `x402.aibtc.com`
-- `well-knowns.resolved.sh`
-- `publish.new`
+- [stableemail.dev](https://stableemail.dev)
+- [renderself.com](https://renderself.com)
+- [dialtoneapp.com](https://dialtoneapp.com)
+- [www.inerrata.ai](https://www.inerrata.ai)
+- [anybrowse.dev](https://anybrowse.dev)
+- [x402.quicknode.com](https://x402.quicknode.com)
+- [emc2ai.io](https://emc2ai.io)
+- [x402.aibtc.com](https://x402.aibtc.com)
+- [well-knowns.resolved.sh](https://well-knowns.resolved.sh)
+- [publish.new](https://publish.new)
 
 The remaining hard-coded corpus is scanned afterward on a conservative cadence.
 
@@ -106,10 +106,10 @@ The desktop app does not charge cards directly.
 `Yes, buy` starts `PurchaseCoordinator`, which currently:
 
 1. Checks for a desktop session token in Keychain.
-2. Opens `https://dialtoneapp.com/login` if no token exists.
-3. Checks `GET https://dialtoneapp.com/api/users/me/network-card` when logged in.
-4. Opens `https://dialtoneapp.com/bot-buyer` if no saved bot-buyer card exists.
-5. Sends supported purchase requests to `POST https://dialtoneapp.com/api/users/me/bot-purchases`.
+2. Opens [https://dialtoneapp.com/login](https://dialtoneapp.com/login) if no token exists.
+3. Checks `GET` [https://dialtoneapp.com/api/users/me/network-card](https://dialtoneapp.com/api/users/me/network-card) when logged in.
+4. Opens [https://dialtoneapp.com/bot-buyer](https://dialtoneapp.com/bot-buyer) if no saved bot-buyer card exists.
+5. Sends supported purchase requests to `POST` [https://dialtoneapp.com/api/users/me/bot-purchases](https://dialtoneapp.com/api/users/me/bot-purchases).
 
 Supported result states are modeled in the app:
 
