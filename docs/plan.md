@@ -137,6 +137,8 @@
 - Verified a fresh login callback now reaches DialtoneApp Desktop, exchanges the one-time code, stores the desktop token, and marks `code_used_at` in local D1.
 - Found the next weird state: `/api/users/me/network-card` returns `payment_method` and `payment_methods`, so the desktop app was treating any `200` response as "card exists" and moving on to the purchase request instead of sending cardless users to `/bot-buyer`.
 - Fixed the desktop card gate to parse the actual network-card payload, clear rejected desktop tokens, surface signed-in/card readiness in the UI, and treat missing API/x402 purchase support as unsupported instead of a red failure.
+- Added the authenticated web worker bridge for `POST /api/users/me/bot-purchases` so desktop approvals no longer fall through to `404` and appear as `unsupported_merchant` for every domain.
+- Marked `dialtoneapp.com` as the first supported desktop bot merchant: saved-card approvals now create a DialtoneApp Network payment signature and call the membership intent endpoint; browser-only candidates return a browser handoff, and other merchants return an explicit unsupported response.
 
 ### Still pending for public v0.0.1
 
@@ -146,7 +148,7 @@
 - Per-domain successful re-scan cadence of 6 hours.
 - Failed-domain exponential backoff persistence.
 - Backend contract hardening for `GET /api/users/me/network-card`.
-- Backend contract hardening for `POST /api/users/me/bot-purchases`.
+- Sandbox-log pass for `POST /api/users/me/bot-purchases` after running a fresh DialtoneApp membership approval from the desktop app.
 - Further x402 payment-required metadata parsing after another live-log pass.
 - More complete UCP, commerce manifest, and agent-card schema parsing.
 - Browser handoff result polish for unsupported merchants.
