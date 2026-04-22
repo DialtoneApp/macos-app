@@ -31,15 +31,13 @@ The first working slice is implemented:
 - Found item cards with approve/reject/source actions
 - Log window with Agent, Network, and Purchases tabs
 - Purchase coordinator scaffold for DialtoneApp login, saved-card gate, and DialtoneApp Network purchase request
+- Desktop auth client bridge with login request creation, custom URL callback handling, code exchange, and Keychain session storage
 
 Still pending for v0.0.1:
 
-- Desktop login request creation
-- [`dialtoneapp-desktop://auth/callback`](dialtoneapp-desktop://auth/callback) URL scheme handling
-- Keychain write path for exchanged desktop session tokens
+- Backend support for desktop login request creation, code exchange, and browser redirect
 - SQLite persistence for reports, network calls, endpoints, and candidates
 - Durable scan backoff and 6-hour successful re-scan cadence
-- Budget and policy enforcement before real purchases
 - Release signing, archiving, and notarization
 
 ## Requirements
@@ -110,7 +108,7 @@ The desktop app does not charge cards directly.
 `Yes, buy` starts `PurchaseCoordinator`, which currently:
 
 1. Checks for a desktop session token in Keychain.
-2. Opens [https://dialtoneapp.com/login](https://dialtoneapp.com/login) if no token exists.
+2. Creates a desktop login request and opens the returned browser login URL if no token exists.
 3. Checks `GET` [https://dialtoneapp.com/api/users/me/network-card](https://dialtoneapp.com/api/users/me/network-card) when logged in.
 4. Opens [https://dialtoneapp.com/bot-buyer](https://dialtoneapp.com/bot-buyer) if no saved bot-buyer card exists.
 5. Sends supported purchase requests to `POST` [https://dialtoneapp.com/api/users/me/bot-purchases](https://dialtoneapp.com/api/users/me/bot-purchases).

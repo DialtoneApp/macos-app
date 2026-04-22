@@ -8,6 +8,11 @@ final class PurchaseCoordinator {
     private let session: URLSession
     private let loginURL = URL(string: "https://dialtoneapp.com/login")!
     private let botBuyerURL = URL(string: "https://dialtoneapp.com/bot-buyer")!
+    private let desktopLoginRequestURL = URL(string: "https://dialtoneapp.com/api/auth/desktop-login-requests")!
+    private let desktopLoginExchangeURL = URL(string: "https://dialtoneapp.com/api/auth/desktop-login-requests/exchange")!
+    private let desktopCallbackURL = URL(string: "dialtoneapp-desktop://auth/callback")!
+    private let pendingDesktopLoginStateKey = "dialtoneapp.desktop_login.state"
+    private let pendingDesktopLoginRequestIDKey = "dialtoneapp.desktop_login.request_id"
 
     init(logStore: LocalLogStore) {
         self.logStore = logStore
@@ -40,12 +45,12 @@ final class PurchaseCoordinator {
         ])
 
         guard let token = loadDesktopSessionToken(), !token.isEmpty else {
-            NSWorkspace.shared.open(loginURL)
+            let authURL = await openDesktopLogin()
             let result = PurchaseFlowResult(
                 state: .needsLogin,
                 message: "DialtoneApp login is required before buying.",
                 requestID: purchaseRequestID,
-                handoffURL: loginURL
+                handoffURL: authURL
             )
             logResult(result, candidate: candidate)
             return result
@@ -81,6 +86,169 @@ final class PurchaseCoordinator {
             logResult(result, candidate: candidate)
             return result
         }
+    }
+
+    func handleAuthCallback(_ url: URL) async -> Bool {
+        guard isDesktopAuthCallback(url) else {
+            return false
+        }
+
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        if let error = queryItems.trimmedValue(named: "error") {
+            logStore.append(.purchases, level: .error, "Desktop login callback returned an error", metadata: [
+                "error": error
+            ])
+            clearPendingDesktopLogin()
+            return true
+        }
+
+        guard let code = queryItems.trimmedValue(named: "code") else {
+            logStore.append(.purchases, level: .error, "Desktop login callback missing code")
+            return true
+        }
+
+        let returnedState = queryItems.trimmedValue(named: "state")
+        if let expectedState = UserDefaults.standard.string(forKey: pendingDesktopLoginStateKey),
+           let returnedState,
+           returnedState != expectedState {
+            logStore.append(.purchases, level: .error, "Desktop login callback state mismatch")
+            return true
+        }
+
+        do {
+            let token = try await exchangeDesktopAuthCode(code: code, state: returnedState)
+            try saveDesktopSessionToken(token)
+            clearPendingDesktopLogin()
+            logStore.append(.purchases, level: .success, "Desktop login token stored in Keychain")
+        } catch {
+            logStore.append(.purchases, level: .error, "Desktop login exchange failed", metadata: [
+                "error": error.localizedDescription
+            ])
+        }
+
+        return true
+    }
+
+    private func openDesktopLogin() async -> URL {
+        do {
+            let desktopLogin = try await createDesktopLoginRequest()
+            NSWorkspace.shared.open(desktopLogin.loginURL)
+            logStore.append(.purchases, level: .success, "Desktop login handoff opened", metadata: [
+                "desktop_request_id": desktopLogin.requestID ?? "none",
+                "state_set": desktopLogin.state.isEmpty ? "false" : "true"
+            ])
+            return desktopLogin.loginURL
+        } catch {
+            NSWorkspace.shared.open(loginURL)
+            logStore.append(.purchases, level: .warning, "Desktop login request failed; opened fallback login", metadata: [
+                "error": error.localizedDescription
+            ])
+            return loginURL
+        }
+    }
+
+    private func createDesktopLoginRequest() async throws -> DesktopLoginRequest {
+        let state = UUID().uuidString
+        var request = URLRequest(url: desktopLoginRequestURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let body: [String: String] = [
+            "app_name": "DialtoneApp Desktop",
+            "app_version": appVersion,
+            "callback_url": desktopCallbackURL.absoluteString,
+            "state": state
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+
+        let started = Date()
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let durationMS = Int(Date().timeIntervalSince(started) * 1_000)
+
+        logStore.append(.purchases, level: (200..<300).contains(status) ? .success : .warning, "Desktop login request completed", metadata: [
+            "status": "\(status)",
+            "duration_ms": "\(durationMS)",
+            "bytes": "\(data.count)"
+        ])
+
+        guard (200..<300).contains(status) else {
+            throw DesktopAuthError.requestFailed(status: status)
+        }
+
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DesktopAuthError.invalidResponse("desktop login response was not JSON")
+        }
+
+        let requestID = stringValue(object["desktop_request_id"])
+            ?? stringValue(object["request_id"])
+            ?? stringValue(object["id"])
+        let responseState = stringValue(object["state"]) ?? state
+        let responseLoginURL = stringValue(object["login_url"])
+            ?? stringValue(object["loginUrl"])
+            ?? stringValue(object["url"])
+
+        guard requestID != nil || responseLoginURL != nil else {
+            throw DesktopAuthError.invalidResponse("desktop login response did not include a request id or login URL")
+        }
+
+        let handoffURL = responseLoginURL.flatMap(URL.init(string:))
+            ?? makeLoginURL(desktopRequestID: requestID)
+
+        UserDefaults.standard.set(responseState, forKey: pendingDesktopLoginStateKey)
+        if let requestID {
+            UserDefaults.standard.set(requestID, forKey: pendingDesktopLoginRequestIDKey)
+        }
+
+        return DesktopLoginRequest(requestID: requestID, state: responseState, loginURL: handoffURL)
+    }
+
+    private func exchangeDesktopAuthCode(code: String, state: String?) async throws -> String {
+        var request = URLRequest(url: desktopLoginExchangeURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        var body: [String: String] = [
+            "code": code,
+            "callback_url": desktopCallbackURL.absoluteString
+        ]
+        if let state {
+            body["state"] = state
+        }
+        if let requestID = UserDefaults.standard.string(forKey: pendingDesktopLoginRequestIDKey) {
+            body["desktop_request_id"] = requestID
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+
+        let started = Date()
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let durationMS = Int(Date().timeIntervalSince(started) * 1_000)
+
+        logStore.append(.purchases, level: (200..<300).contains(status) ? .success : .warning, "Desktop login code exchange completed", metadata: [
+            "status": "\(status)",
+            "duration_ms": "\(durationMS)",
+            "bytes": "\(data.count)"
+        ])
+
+        guard (200..<300).contains(status) else {
+            throw DesktopAuthError.exchangeFailed(status: status)
+        }
+
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DesktopAuthError.invalidResponse("desktop login exchange response was not JSON")
+        }
+
+        guard let token = stringValue(object["session_token"])
+            ?? stringValue(object["sessionToken"])
+            ?? stringValue(object["token"]) else {
+            throw DesktopAuthError.invalidResponse("desktop login exchange response did not include a session token")
+        }
+
+        return token
     }
 
     private func checkSavedCard(token: String, candidate: PurchaseCandidate, requestID: String) async throws -> Bool {
@@ -235,6 +403,27 @@ final class PurchaseCoordinator {
         }
     }
 
+    private func makeLoginURL(desktopRequestID: String?) -> URL {
+        var components = URLComponents(url: loginURL, resolvingAgainstBaseURL: false)
+        var queryItems = components?.queryItems ?? []
+        if let desktopRequestID {
+            queryItems.append(URLQueryItem(name: "desktop_request_id", value: desktopRequestID))
+        }
+        components?.queryItems = queryItems
+        return components?.url ?? loginURL
+    }
+
+    private func isDesktopAuthCallback(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "dialtoneapp-desktop"
+            && url.host?.lowercased() == "auth"
+            && url.path.lowercased() == "/callback"
+    }
+
+    private func clearPendingDesktopLogin() {
+        UserDefaults.standard.removeObject(forKey: pendingDesktopLoginStateKey)
+        UserDefaults.standard.removeObject(forKey: pendingDesktopLoginRequestIDKey)
+    }
+
     private func logResult(_ result: PurchaseFlowResult, candidate: PurchaseCandidate) {
         let level: LogLevel
         switch result.state {
@@ -273,6 +462,44 @@ final class PurchaseCoordinator {
         return String(data: data, encoding: .utf8)
     }
 
+    private func saveDesktopSessionToken(_ token: String) throws {
+        let data = Data(token.utf8)
+        let query = desktopSessionQuery()
+        let update: [String: Any] = [
+            kSecValueData as String: data
+        ]
+
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return
+        }
+
+        guard updateStatus == errSecItemNotFound else {
+            throw DesktopAuthError.keychain(status: updateStatus)
+        }
+
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw DesktopAuthError.keychain(status: addStatus)
+        }
+    }
+
+    private func desktopSessionQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "DialtoneApp Desktop",
+            kSecAttrAccount as String: "desktop_session"
+        ]
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.1"
+    }
+
     private func stringValue(_ value: Any?) -> String? {
         if let string = value as? String {
             let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -284,5 +511,43 @@ final class PurchaseCoordinator {
         }
 
         return nil
+    }
+}
+
+private struct DesktopLoginRequest {
+    var requestID: String?
+    var state: String
+    var loginURL: URL
+}
+
+private enum DesktopAuthError: LocalizedError {
+    case requestFailed(status: Int)
+    case exchangeFailed(status: Int)
+    case invalidResponse(String)
+    case keychain(status: OSStatus)
+
+    var errorDescription: String? {
+        switch self {
+        case .requestFailed(let status):
+            return "Desktop login request failed with status \(status)."
+        case .exchangeFailed(let status):
+            return "Desktop login code exchange failed with status \(status)."
+        case .invalidResponse(let message):
+            return message
+        case .keychain(let status):
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
+            return "Keychain write failed: \(message)"
+        }
+    }
+}
+
+private extension Array where Element == URLQueryItem {
+    func trimmedValue(named name: String) -> String? {
+        guard let rawValue = first(where: { $0.name == name })?.value else {
+            return nil
+        }
+
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

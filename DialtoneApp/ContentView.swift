@@ -26,6 +26,7 @@ final class BotShoppingModel: ObservableObject {
     private var scanner: DomainScanner?
     private let purchaseCoordinator: PurchaseCoordinator
     private var knownCandidateFingerprints = Set<String>()
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         let logs = LocalLogStore()
@@ -49,6 +50,22 @@ final class BotShoppingModel: ObservableObject {
                 self.reports = Array(self.reports.prefix(50))
             }
         )
+
+        NotificationCenter.default.publisher(for: .dialtoneAppOpenURL)
+            .compactMap { $0.object as? URL }
+            .sink { [weak self] url in
+                Task { @MainActor in
+                    await self?.handleIncomingURL(url)
+                    DialtoneAppOpenURLInbox.markHandled(url)
+                }
+            }
+            .store(in: &cancellables)
+
+        for pendingURL in DialtoneAppOpenURLInbox.drain() {
+            Task { @MainActor in
+                await handleIncomingURL(pendingURL)
+            }
+        }
 
         scanner?.startIfNeeded()
     }
@@ -97,6 +114,18 @@ final class BotShoppingModel: ObservableObject {
 
     func openSource(for candidate: PurchaseCandidate) {
         NSWorkspace.shared.open(candidate.productURL ?? candidate.sourceURL)
+    }
+
+    func handleIncomingURL(_ url: URL) async {
+        let handled = await purchaseCoordinator.handleAuthCallback(url)
+        if handled {
+            status = "Processed DialtoneApp login callback"
+        } else {
+            logs.append(.agent, level: .warning, "Ignored unsupported URL callback", metadata: [
+                "scheme": url.scheme ?? "none",
+                "host": url.host ?? "none"
+            ])
+        }
     }
 
     private func ingest(_ newCandidates: [PurchaseCandidate]) {

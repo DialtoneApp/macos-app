@@ -105,12 +105,18 @@
 - Updated the plan so budgets, auto-approval rules, and category personalization are explicitly out of scope for v0.0.1.
 - Kept the app focused on `Found Items`, `Activity`, local logs, red-dot notification, and the `No` / `Yes, buy` flow.
 
+### Desktop auth bridge client - April 22, 2026
+
+- Registered the `dialtoneapp-desktop://auth/callback` custom URL scheme in the generated app Info.plist settings.
+- Added an app-level URL-open delegate and routed incoming auth callback URLs into `BotShoppingModel`.
+- Changed the logged-out `Yes, buy` path to create a desktop login request before opening the browser, with direct `/login` fallback if the backend endpoint is unavailable.
+- Added desktop auth callback handling, code exchange, state checking when provided, and Keychain storage for exchanged desktop session tokens.
+- Logged desktop login request, code exchange, handoff, and Keychain outcomes without writing auth tokens to local logs.
+
 ### Still pending for public v0.0.1
 
-- Real desktop login request creation endpoint.
-- Custom URL scheme registration for `dialtoneapp-desktop://auth/callback?code=...`.
-- Auth callback handling and code exchange.
-- Keychain write path for the exchanged desktop session token.
+- Backend implementation for desktop login request creation and code-exchange endpoints.
+- Browser login page support for `desktop_request_id` and custom-scheme redirect after login.
 - Durable SQLite store for domain reports, network calls, discovered API calls, and purchase candidates.
 - `settings.json` persistence for scan enabled and dismissed candidates.
 - Per-domain successful re-scan cadence of 6 hours.

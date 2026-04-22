@@ -1,14 +1,41 @@
-//
-//  DialtoneAppApp.swift
-//  DialtoneApp
-//
-//  Created by aa on 4/22/26.
-//
-
+import AppKit
 import SwiftUI
+
+extension Notification.Name {
+    static let dialtoneAppOpenURL = Notification.Name("dialtoneAppOpenURL")
+}
+
+@MainActor
+enum DialtoneAppOpenURLInbox {
+    private static var pendingURLs: [URL] = []
+
+    static func enqueue(_ url: URL) {
+        pendingURLs.append(url)
+        NotificationCenter.default.post(name: .dialtoneAppOpenURL, object: url)
+    }
+
+    static func drain() -> [URL] {
+        defer { pendingURLs = [] }
+        return pendingURLs
+    }
+
+    static func markHandled(_ url: URL) {
+        pendingURLs.removeAll { $0 == url }
+    }
+}
+
+@MainActor
+final class DialtoneAppOpenURLDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            DialtoneAppOpenURLInbox.enqueue(url)
+        }
+    }
+}
 
 @main
 struct DialtoneAppApp: App {
+    @NSApplicationDelegateAdaptor(DialtoneAppOpenURLDelegate.self) private var openURLDelegate
     @StateObject private var model = BotShoppingModel()
     @Environment(\.openWindow) private var openWindow
 
