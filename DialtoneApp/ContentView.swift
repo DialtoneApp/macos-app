@@ -57,8 +57,13 @@ struct ActivityItem: Identifiable {
     let icon: String
 }
 
+@MainActor
 final class BotShoppingModel: ObservableObject {
-    @Published var botEnabled = true
+    @Published var botEnabled = true {
+        didSet {
+            scanner?.setEnabled(botEnabled)
+        }
+    }
     @Published var weeklyBudget = 75.0
     @Published var autoApproveLimit = 12.0
     @Published var approvalMode: ApprovalMode = .askEveryTime
@@ -70,55 +75,42 @@ final class BotShoppingModel: ObservableObject {
     @Published var scanUCP = true
     @Published var scanX402 = true
     @Published var scanOpenAPI = true
-    @Published var status = "Watching trusted commerce surfaces"
+    @Published var status = "Starting scanner"
+    @Published private(set) var candidates: [PurchaseCandidate] = []
+    @Published private(set) var reports: [DomainDiscoveryReport] = []
+    @Published private(set) var unseenCandidateCount = 0
 
-    let suggestions: [ShoppingSuggestion] = [
-        ShoppingSuggestion(
-            title: "AI-readiness membership",
-            merchant: "dialtoneapp.com",
-            price: "$9.00 / month",
-            protocolName: "Commerce API",
-            risk: "Recurring, needs approval",
-            icon: "checklist.checked",
-            accent: .teal
-        ),
-        ShoppingSuggestion(
-            title: "Website screenshot run",
-            merchant: "anybrowse.dev",
-            price: "$0.02",
-            protocolName: "x402",
-            risk: "Within auto limit",
-            icon: "camera.viewfinder",
-            accent: .indigo
-        ),
-        ShoppingSuggestion(
-            title: "Inbox for agent tests",
-            merchant: "stableemail.dev",
-            price: "$3.00",
-            protocolName: "x402 / MPP",
-            risk: "Policy approval recommended",
-            icon: "envelope.badge",
-            accent: .green
-        )
-    ]
+    let logs: LocalLogStore
 
-    let activity: [ActivityItem] = [
-        ActivityItem(
-            title: "Checked UCP retail examples",
-            detail: "Catalogs are useful; final card checkout still needs owner authority.",
-            icon: "cart.badge.questionmark"
-        ),
-        ActivityItem(
-            title: "Checked x402 services",
-            detail: "API purchases are clearer because price appears before retry payment.",
-            icon: "creditcard.trianglebadge.exclamationmark"
-        ),
-        ActivityItem(
-            title: "No autonomous purchase made",
-            detail: "v0.0.1 is UI-only and keeps every suggestion pending.",
-            icon: "pause.circle"
+    private var scanner: DomainScanner?
+    private let purchaseCoordinator: PurchaseCoordinator
+    private var knownCandidateFingerprints = Set<String>()
+
+    init() {
+        let logs = LocalLogStore()
+        self.logs = logs
+        purchaseCoordinator = PurchaseCoordinator(logStore: logs)
+
+        logs.append(.agent, level: .success, "DialtoneApp Desktop launched")
+        logs.writeDomainState(domains: DomainCorpus.all)
+
+        scanner = DomainScanner(
+            logStore: logs,
+            onStatus: { [weak self] status in
+                self?.status = status
+            },
+            onCandidates: { [weak self] candidates in
+                self?.ingest(candidates)
+            },
+            onReport: { [weak self] report in
+                guard let self else { return }
+                self.reports.insert(report, at: 0)
+                self.reports = Array(self.reports.prefix(50))
+            }
         )
-    ]
+
+        scanner?.startIfNeeded()
+    }
 
     var selectedCategorySummary: String {
         let count = selectedCategories.count
@@ -135,6 +127,79 @@ final class BotShoppingModel: ObservableObject {
 
     var autoApproveText: String {
         "$\(Int(autoApproveLimit))"
+    }
+
+    var pendingCandidates: [PurchaseCandidate] {
+        candidates.filter { $0.decision == .pending }
+    }
+
+    var dismissedCandidates: [PurchaseCandidate] {
+        candidates.filter { $0.decision == .dismissed }
+    }
+
+    var approvedCandidates: [PurchaseCandidate] {
+        candidates.filter { $0.decision == .approved }
+    }
+
+    var scannedDomainCount: Int {
+        Set(reports.map(\.domain)).count
+    }
+
+    func markCandidatesSeen() {
+        guard unseenCandidateCount > 0 else { return }
+        unseenCandidateCount = 0
+        logs.append(.agent, "Red-dot state cleared")
+    }
+
+    func dismiss(_ candidate: PurchaseCandidate) {
+        updateCandidate(candidate.id) { candidate in
+            candidate.decision = .dismissed
+        }
+        purchaseCoordinator.reject(candidate)
+    }
+
+    func approve(_ candidate: PurchaseCandidate) {
+        updateCandidate(candidate.id) { candidate in
+            candidate.decision = .approved
+        }
+
+        Task {
+            let result = await purchaseCoordinator.approve(candidate)
+            updateCandidate(candidate.id) { candidate in
+                candidate.result = result
+            }
+        }
+    }
+
+    func openSource(for candidate: PurchaseCandidate) {
+        NSWorkspace.shared.open(candidate.productURL ?? candidate.sourceURL)
+    }
+
+    private func ingest(_ newCandidates: [PurchaseCandidate]) {
+        var inserted = 0
+
+        for candidate in newCandidates where !knownCandidateFingerprints.contains(candidate.fingerprint) {
+            knownCandidateFingerprints.insert(candidate.fingerprint)
+            candidates.insert(candidate, at: 0)
+            inserted += 1
+            logs.append(.agent, level: .success, "Candidate created", metadata: [
+                "candidate_id": candidate.id.uuidString,
+                "domain": candidate.domain,
+                "title": candidate.title,
+                "source": candidate.sourceKind.rawValue,
+                "price": candidate.price?.displayValue ?? "none"
+            ])
+        }
+
+        if inserted > 0 {
+            unseenCandidateCount += inserted
+            logs.append(.agent, level: .success, "Red-dot state changed", metadata: ["unseen": "\(unseenCandidateCount)"])
+        }
+    }
+
+    private func updateCandidate(_ id: UUID, mutate: (inout PurchaseCandidate) -> Void) {
+        guard let index = candidates.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&candidates[index])
     }
 }
 
@@ -174,7 +239,7 @@ struct ContentView: View {
 
 enum AppSection: String, CaseIterable, Identifiable {
     case setup = "Setup"
-    case discover = "Discover"
+    case discover = "Found Items"
     case approvals = "Approvals"
     case activity = "Activity"
 
@@ -183,7 +248,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .setup: return "slider.horizontal.3"
-        case .discover: return "magnifyingglass"
+        case .discover: return "sparkle.magnifyingglass"
         case .approvals: return "checkmark.seal"
         case .activity: return "clock.arrow.circlepath"
         }
@@ -235,7 +300,7 @@ struct HeroPanel: View {
                     Text("DialtoneApp Desktop")
                         .font(.system(size: 38, weight: .semibold, design: .rounded))
 
-                    Text("Configure what DialtoneApp Desktop should watch, how much it can spend, and when it must ask before buying.")
+                    Text("Scans the fixed v0.0.1 corpus for product feeds, OpenAPI actions, UCP files, x402 metadata, and checkout surfaces before asking you to approve anything.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 650, alignment: .leading)
@@ -261,8 +326,9 @@ struct HeroPanel: View {
 
             HStack(spacing: 12) {
                 MetricPill(icon: "wallet.pass", label: "Budget", value: model.weeklyBudgetText, tint: .green)
-                MetricPill(icon: "checkmark.shield", label: "Approval", value: model.approvalMode.rawValue, tint: .blue)
-                MetricPill(icon: "tag", label: "Scope", value: model.selectedCategorySummary, tint: .orange)
+                MetricPill(icon: "sparkle.magnifyingglass", label: "Found", value: "\(model.candidates.count) items", tint: .blue)
+                MetricPill(icon: "circle.fill", label: "Unseen", value: "\(model.unseenCandidateCount)", tint: .red)
+                MetricPill(icon: "network", label: "Scanned", value: "\(model.scannedDomainCount) domains", tint: .orange)
             }
         }
         .padding(24)
@@ -279,9 +345,9 @@ struct StatusStrip: View {
             Label(model.status, systemImage: model.botEnabled ? "antenna.radiowaves.left.and.right" : "pause.circle")
                 .font(.callout.weight(.medium))
             Spacer()
-            Label("UCP", systemImage: model.scanUCP ? "checkmark.circle.fill" : "circle")
-            Label("x402", systemImage: model.scanX402 ? "checkmark.circle.fill" : "circle")
-            Label("OpenAPI", systemImage: model.scanOpenAPI ? "checkmark.circle.fill" : "circle")
+            Label("\(DomainCorpus.all.count) domains", systemImage: "list.bullet.rectangle")
+            Label("\(model.pendingCandidates.count) pending", systemImage: "tray")
+            Label("\(model.logs.networkLines.count) calls", systemImage: "network")
         }
         .foregroundStyle(.secondary)
         .padding(14)
@@ -361,13 +427,17 @@ struct DiscoveryScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             SectionHeader(
-                title: "Suggested purchases",
-                subtitle: "These are static v0.0.1 examples based on the AI bot buying report."
+                title: "Found Items",
+                subtitle: "Live candidates discovered from the hard-coded April 2026 bot-buying corpus."
             )
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
-                ForEach(model.suggestions) { suggestion in
-                    SuggestionCard(suggestion: suggestion)
+            if model.candidates.isEmpty {
+                EmptyScannerState()
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 14)], spacing: 14) {
+                    ForEach(model.candidates) { candidate in
+                        CandidateCard(candidate: candidate)
+                    }
                 }
             }
         }
@@ -395,9 +465,15 @@ struct ApprovalsScreen: View {
             }
 
             Card(title: "Pending queue", icon: "tray") {
-                ApprovalRow(title: "AI-readiness membership", detail: "Recurring $9.00 monthly charge", price: "$9.00")
-                ApprovalRow(title: "Agent inbox", detail: "Email capability needs policy review", price: "$3.00")
-                ApprovalRow(title: "Retail cart handoff", detail: "Physical goods always ask in v0.0.1", price: "$42.00")
+                if model.pendingCandidates.isEmpty {
+                    Text("No pending candidates yet. The scanner is still working through the high-signal domains.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(model.pendingCandidates.prefix(8)) { candidate in
+                        ApprovalRow(candidate: candidate)
+                    }
+                }
             }
         }
     }
@@ -409,16 +485,21 @@ struct ActivityScreen: View {
     var body: some View {
         Card(title: "Background activity", icon: "clock.arrow.circlepath") {
             VStack(spacing: 12) {
-                ForEach(model.activity) { item in
+                if model.reports.isEmpty && model.logs.agentLines.isEmpty {
+                    Text("No scanner activity yet.")
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(model.reports.prefix(8)) { report in
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: item.icon)
+                        Image(systemName: report.candidates.isEmpty ? "checkmark.circle" : "sparkles")
                             .font(.title3)
-                            .foregroundStyle(.teal)
+                            .foregroundStyle(report.candidates.isEmpty ? Color.secondary : Color.teal)
                             .frame(width: 28)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
+                            Text(report.domain)
                                 .font(.headline)
-                            Text(item.detail)
+                            Text(report.summary)
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -534,54 +615,122 @@ struct CategoryToggle: View {
     }
 }
 
-struct SuggestionCard: View {
-    let suggestion: ShoppingSuggestion
+struct EmptyScannerState: View {
+    var body: some View {
+        Card(title: "Scanner warming up", icon: "antenna.radiowaves.left.and.right") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("DialtoneApp Desktop is scanning the first high-signal domains now.")
+                    .font(.headline)
+
+                Text(DomainCorpus.highSignal.joined(separator: "\n"))
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+struct CandidateCard: View {
+    @EnvironmentObject private var model: BotShoppingModel
+    let candidate: PurchaseCandidate
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                Image(systemName: suggestion.icon)
-                    .font(.title2)
-                    .foregroundStyle(suggestion.accent)
-                    .frame(width: 34, height: 34)
-                    .background(suggestion.accent.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if let imageURL = candidate.imageURL {
+                AsyncImage(url: imageURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        Image(systemName: "photo")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(height: 150)
+                .frame(maxWidth: .infinity)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(candidate.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                    Text(candidate.merchantName)
+                        .foregroundStyle(.secondary)
+                }
 
                 Spacer()
 
-                Text(suggestion.protocolName)
+                Text(candidate.sourceKind.rawValue)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(suggestion.accent)
+                    .foregroundStyle(.teal)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(suggestion.accent.opacity(0.12))
+                    .background(.teal.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(suggestion.title)
-                    .font(.headline)
-                Text(suggestion.merchant)
+            if let description = candidate.description, !description.isEmpty {
+                Text(description)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
+                    .lineLimit(3)
             }
 
-            HStack {
-                Text(suggestion.price)
-                    .font(.title3.weight(.semibold))
-                Spacer()
-                Text(suggestion.risk)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(candidate.price?.displayValue ?? "Price unavailable")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                    Text("\(Int(candidate.confidence * 100))% confidence")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Label(candidate.purchaseStrategy.label, systemImage: "creditcard")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Text(candidate.sourceURL.absoluteString)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if let result = candidate.result {
+                ResultPill(result: result)
             }
 
             HStack {
                 Button {
+                    model.dismiss(candidate)
                 } label: {
-                    Label("Review", systemImage: "doc.text.magnifyingglass")
+                    Label("No", systemImage: "xmark")
                 }
+                .disabled(candidate.decision != .pending)
+
                 Button {
+                    model.approve(candidate)
                 } label: {
-                    Label("Hold", systemImage: "pause")
+                    Label("Yes, buy", systemImage: "checkmark")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(candidate.decision != .pending)
+
+                Spacer()
+
+                Button {
+                    model.openSource(for: candidate)
+                } label: {
+                    Label("Open source", systemImage: "safari")
                 }
             }
         }
@@ -591,29 +740,70 @@ struct SuggestionCard: View {
     }
 }
 
+struct ResultPill: View {
+    let result: PurchaseFlowResult
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.state.rawValue.replacingOccurrences(of: "_", with: " "))
+                    .font(.headline)
+                Text(result.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var icon: String {
+        switch result.state {
+        case .purchased: return "checkmark.seal.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .needsLogin, .needsBotBuyerCard, .needsBrowserCheckout: return "arrow.up.right.square"
+        case .unsupportedMerchant, .policyBlocked: return "hand.raised.fill"
+        }
+    }
+
+    private var color: Color {
+        switch result.state {
+        case .purchased: return .green
+        case .failed: return .red
+        case .needsLogin, .needsBotBuyerCard, .needsBrowserCheckout: return .orange
+        case .unsupportedMerchant, .policyBlocked: return .yellow
+        }
+    }
+}
+
 struct ApprovalRow: View {
-    let title: String
-    let detail: String
-    let price: String
+    @EnvironmentObject private var model: BotShoppingModel
+    let candidate: PurchaseCandidate
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "hourglass")
                 .foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(candidate.title)
                     .font(.headline)
-                Text(detail)
+                Text("\(candidate.domain) - \(candidate.sourceKind.rawValue)")
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text(price)
+            Text(candidate.price?.displayValue ?? "No price")
                 .font(.system(.body, design: .monospaced).weight(.semibold))
             Button {
+                model.approve(candidate)
             } label: {
                 Image(systemName: "checkmark")
             }
             Button {
+                model.dismiss(candidate)
             } label: {
                 Image(systemName: "xmark")
             }
@@ -647,19 +837,36 @@ struct MenuBarView: View {
             }
             .foregroundStyle(.secondary)
 
+            HStack {
+                Label("\(model.unseenCandidateCount) unseen", systemImage: "circle.fill")
+                Spacer()
+                Label("\(model.pendingCandidates.count) pending", systemImage: "tray")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
             Divider()
 
-            ForEach(model.suggestions.prefix(2)) { suggestion in
-                HStack {
-                    Image(systemName: suggestion.icon)
-                        .foregroundStyle(suggestion.accent)
-                    VStack(alignment: .leading) {
-                        Text(suggestion.title)
-                        Text("\(suggestion.merchant) - \(suggestion.price)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            if model.candidates.isEmpty {
+                Text(model.status)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(model.candidates.prefix(3)) { candidate in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: candidate.decision == .pending ? "sparkles" : "checkmark.circle")
+                            .foregroundStyle(candidate.decision == .pending ? Color.teal : Color.secondary)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(candidate.title)
+                                .lineLimit(1)
+                            Text("\(candidate.merchantName) - \(candidate.price?.displayValue ?? "no price")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
                     }
-                    Spacer()
                 }
             }
 
@@ -669,13 +876,28 @@ struct MenuBarView: View {
                 openWindow(id: "main")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             } label: {
-                Label("Open Full Window", systemImage: "macwindow")
+                Label("Open DialtoneApp Desktop", systemImage: "macwindow")
             }
+
+            Button {
+                openWindow(id: "logs")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            } label: {
+                Label("View Log", systemImage: "doc.text.magnifyingglass")
+            }
+
+            Button {
+                model.logs.revealLogFiles()
+            } label: {
+                Label("Reveal Log Files", systemImage: "folder")
+            }
+
+            Divider()
 
             Button {
                 model.botEnabled.toggle()
             } label: {
-                Label(model.botEnabled ? "Pause Desktop Agent" : "Resume Desktop Agent", systemImage: model.botEnabled ? "pause" : "play")
+                Label(model.botEnabled ? "Pause Bot" : "Resume Bot", systemImage: model.botEnabled ? "pause" : "play")
             }
 
             Button(role: .destructive) {
@@ -685,7 +907,28 @@ struct MenuBarView: View {
             }
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 360)
+    }
+}
+
+struct MenuBarLabel: View {
+    let unseenCount: Int
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image("MenuBarIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+
+            if unseenCount > 0 {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 7, height: 7)
+                    .offset(x: 2, y: -2)
+            }
+        }
+        .accessibilityLabel(unseenCount > 0 ? "DialtoneApp Desktop, \(unseenCount) unseen candidates" : "DialtoneApp Desktop")
     }
 }
 

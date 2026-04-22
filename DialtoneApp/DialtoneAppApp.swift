@@ -19,6 +19,12 @@ struct DialtoneAppApp: App {
                 .containerBackground(.regularMaterial, for: .window)
         }
         .windowResizability(.contentMinSize)
+
+        WindowGroup("Logs", id: "logs") {
+            LogWindow()
+                .environmentObject(model)
+        }
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open DialtoneApp Desktop") {
@@ -26,12 +32,23 @@ struct DialtoneAppApp: App {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
                 .keyboardShortcut("0", modifiers: [.command])
+
+                Button("View Log") {
+                    openWindow(id: "logs")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
 
-        MenuBarExtra("DialtoneApp Desktop", image: "MenuBarIcon") {
+        MenuBarExtra {
             MenuBarView()
                 .environmentObject(model)
+                .onAppear {
+                    model.markCandidatesSeen()
+                }
+        } label: {
+            MenuBarLabel(unseenCount: model.unseenCandidateCount)
         }
         .menuBarExtraStyle(.window)
     }
