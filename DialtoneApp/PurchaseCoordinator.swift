@@ -108,6 +108,7 @@ final class PurchaseCoordinator {
         }
 
         let returnedState = queryItems.trimmedValue(named: "state")
+        let callbackRequestID = queryItems.trimmedValue(named: "desktop_request_id")
         if let expectedState = UserDefaults.standard.string(forKey: pendingDesktopLoginStateKey),
            let returnedState,
            returnedState != expectedState {
@@ -116,7 +117,7 @@ final class PurchaseCoordinator {
         }
 
         do {
-            let token = try await exchangeDesktopAuthCode(code: code, state: returnedState)
+            let token = try await exchangeDesktopAuthCode(code: code, state: returnedState, requestID: callbackRequestID)
             try saveDesktopSessionToken(token)
             clearPendingDesktopLogin()
             logStore.append(.purchases, level: .success, "Desktop login token stored in Keychain")
@@ -214,7 +215,7 @@ final class PurchaseCoordinator {
         return DesktopLoginRequest(requestID: responseRequestID, state: responseState, loginURL: handoffURL)
     }
 
-    private func exchangeDesktopAuthCode(code: String, state: String?) async throws -> String {
+    private func exchangeDesktopAuthCode(code: String, state: String?, requestID callbackRequestID: String?) async throws -> String {
         var request = URLRequest(url: environment.apiPath("api/auth/desktop-login-requests/exchange"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -227,7 +228,7 @@ final class PurchaseCoordinator {
         if let state {
             body["state"] = state
         }
-        if let requestID = UserDefaults.standard.string(forKey: pendingDesktopLoginRequestIDKey) {
+        if let requestID = callbackRequestID ?? UserDefaults.standard.string(forKey: pendingDesktopLoginRequestIDKey) {
             body["desktop_request_id"] = requestID
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])

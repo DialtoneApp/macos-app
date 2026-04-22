@@ -118,12 +118,19 @@
 - Added `AppEnvironment` so the app can read `FRONTEND_URL` and `API_BASE_URL` from process environment variables or generated Info.plist keys.
 - Set Debug `FRONTEND_URL` to `http://localhost:5173` for local browser login and bot-buyer redirects.
 - Set Release `FRONTEND_URL` to `https://dialtoneapp.com` so public builds can switch to production without touching purchase-flow code.
-- Kept `API_BASE_URL` separate from `FRONTEND_URL`; API calls still default to `https://dialtoneapp.com`.
+- Kept `API_BASE_URL` separate from `FRONTEND_URL`; Debug points both to `http://localhost:5173` and Release points both to `https://dialtoneapp.com`.
+
+### Desktop login completion - April 22, 2026
+
+- Chose custom URL callback over WebSocket polling for desktop login completion.
+- Added backend desktop login request storage, completion, one-time callback code generation, and code exchange endpoints.
+- Updated the web login page so email and Google login can complete a `desktop_request_id` flow by redirecting to `dialtoneapp-desktop://auth/callback?...`.
+- Preserved desktop login query parameters through the production Google redirect page.
+- Updated the macOS app to include the callback `desktop_request_id` when exchanging the one-time callback code.
 
 ### Still pending for public v0.0.1
 
-- Backend implementation for desktop login request creation and code-exchange endpoints.
-- Browser login page support for `desktop_request_id` and custom-scheme redirect after login.
+- Apply and deploy the desktop login request migration/endpoints in the web worker environment.
 - Durable SQLite store for domain reports, network calls, discovered API calls, and purchase candidates.
 - `settings.json` persistence for scan enabled and dismissed candidates.
 - Per-domain successful re-scan cadence of 6 hours.

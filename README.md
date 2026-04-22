@@ -55,10 +55,10 @@ The Debug app uses:
 
 ```text
 FRONTEND_URL=http://localhost:5173
-API_BASE_URL=https://dialtoneapp.com
+API_BASE_URL=http://localhost:5173
 ```
 
-`FRONTEND_URL` controls browser handoffs such as `/login` and `/bot-buyer`. Release is configured with `FRONTEND_URL=https://dialtoneapp.com`; either value can also be overridden with a process environment variable.
+`FRONTEND_URL` controls browser handoffs such as `/login` and `/bot-buyer`. `API_BASE_URL` controls desktop auth, saved-card, and purchase API calls. Release is configured with both values set to `https://dialtoneapp.com`; either value can also be overridden with a process environment variable.
 
 ## Build
 
