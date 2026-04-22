@@ -87,6 +87,17 @@
 - Ran `git diff --check`; no whitespace errors were reported.
 - Note: restart the running debug app again before checking whether Quicknode now emits priced x402 candidates.
 
+### Debug build and live-log verification - April 22, 2026
+
+- Built the current Debug target with `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build`; the build succeeded.
+- Restarted the DerivedData Debug app and confirmed it was running as a fresh DialtoneApp process.
+- Watched the new tail of `agent.log` and `network.log` without truncating prior log history.
+- Confirmed the high-signal batch completed successfully after the restart.
+- Confirmed Quicknode x402 discovery resources now emit priced candidates such as `JSON-RPC proxy - 0g-galileo` at `$0.0001`.
+- Confirmed StableEmail, x402.aibtc, emc2ai, Well Knowns, and publish.new still produce expected candidates after the Quicknode parser pass.
+- Confirmed no fresh trailing-apostrophe Quicknode URL fetches appeared in the new network-log tail.
+- Remaining scanner cleanup: Shopify-style variant-only titles such as `Extra Small`, `Small`, `Navy / XL`, and similar variants can still leak as separate product candidates on broad product feeds.
+
 ### Still pending for public v0.0.1
 
 - Real desktop login request creation endpoint.
