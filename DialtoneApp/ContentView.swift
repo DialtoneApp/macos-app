@@ -198,10 +198,10 @@ struct SidebarView: View {
             Label(section.rawValue, systemImage: section.icon)
                 .tag(section)
         }
-        .navigationTitle("DialtoneApp")
+        .navigationTitle("DialtoneApp Desktop")
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Menu bar scout", systemImage: "menubar.rectangle")
+                Label("Menu bar desktop agent", systemImage: "menubar.rectangle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("The app can keep watching after the main window closes.")
@@ -225,10 +225,10 @@ struct HeroPanel: View {
                         .font(.headline)
                         .foregroundStyle(.teal)
 
-                    Text("Shop Scout")
+                    Text("DialtoneApp Desktop")
                         .font(.system(size: 38, weight: .semibold, design: .rounded))
 
-                    Text("Configure what DialtoneApp should watch, how much it can spend, and when it must ask before buying.")
+                    Text("Configure what DialtoneApp Desktop should watch, how much it can spend, and when it must ask before buying.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 650, alignment: .leading)
@@ -626,7 +626,7 @@ struct MenuBarView: View {
             HStack {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.teal)
-                Text("DialtoneApp Scout")
+                Text("DialtoneApp Desktop")
                     .font(.headline)
                 Spacer()
             }
@@ -666,13 +666,13 @@ struct MenuBarView: View {
             Button {
                 model.botEnabled.toggle()
             } label: {
-                Label(model.botEnabled ? "Pause Scout" : "Resume Scout", systemImage: model.botEnabled ? "pause" : "play")
+                Label(model.botEnabled ? "Pause Desktop Agent" : "Resume Desktop Agent", systemImage: model.botEnabled ? "pause" : "play")
             }
 
             Button(role: .destructive) {
                 NSApplication.shared.terminate(nil)
             } label: {
-                Label("Quit DialtoneApp", systemImage: "power")
+                Label("Quit DialtoneApp Desktop", systemImage: "power")
             }
         }
         .padding(14)

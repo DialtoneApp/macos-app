@@ -13,7 +13,7 @@ struct DialtoneAppApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup("DialtoneApp", id: "main") {
+        WindowGroup("DialtoneApp Desktop", id: "main") {
             ContentView()
                 .environmentObject(model)
                 .containerBackground(.regularMaterial, for: .window)
@@ -21,7 +21,7 @@ struct DialtoneAppApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Open DialtoneApp") {
+                Button("Open DialtoneApp Desktop") {
                     openWindow(id: "main")
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
@@ -29,7 +29,7 @@ struct DialtoneAppApp: App {
             }
         }
 
-        MenuBarExtra("DialtoneApp", systemImage: "sparkles") {
+        MenuBarExtra("DialtoneApp Desktop", systemImage: "sparkles") {
             MenuBarView()
                 .environmentObject(model)
         }
