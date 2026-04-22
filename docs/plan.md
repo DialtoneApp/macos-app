@@ -41,6 +41,18 @@
 
 - `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build` succeeds.
 
+### Follow-up scanner fixes - April 22, 2026
+
+- Reviewed live logs under `~/Library/Logs/DialtoneApp Desktop/` and confirmed the high-signal batch completed with network entries and candidate creation.
+- Tightened discovered URL cleanup so markdown-style trailing punctuation such as `):` is stripped before follow-up fetches.
+- Removed generic `api` as a shallow-follow trigger and replaced it with more commerce-specific tokens such as `price`, `purchase`, `artifact`, `api-doc`, and `wp-json/wc/store/products`.
+- Added a pre-fetch binary asset guard for discovered URLs with attachment, image, media, upload, static, and CDN-image style paths.
+- Added first-price extraction for text such as `$1`, `$0.001`, `USD 1.00`, and `1.00 USD` in titles and descriptions.
+- Applied text-price fallback in OpenAPI, generic JSON, JSON-LD, OpenGraph, Shopify, and WooCommerce parsing.
+- Strengthened candidate dedupe across a whole domain report by normalized title, domain, and price instead of only exact candidate fingerprints.
+- Changed candidate fingerprinting to normalize titles and avoid treating different source files for the same product as distinct user-facing candidates.
+- Re-ran `xcodebuild -project DialtoneApp.xcodeproj -scheme DialtoneApp -configuration Debug -destination 'platform=macOS' build`; the build succeeds after these scanner fixes.
+
 ### Still pending for public v0.0.1
 
 - Real desktop login request creation endpoint.

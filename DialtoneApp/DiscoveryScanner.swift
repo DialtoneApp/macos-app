@@ -141,13 +141,14 @@ final class DomainScanner {
             ])
         }
 
+        let dedupedCandidates = dedupeCandidates(candidates)
         let report = DomainDiscoveryReport(
             domain: domain,
             startedAt: startedAt,
             finishedAt: Date(),
             networkCalls: networkCalls,
             discoveredApiCalls: Array(discoveredApiCalls.prefix(80)),
-            candidates: Array(candidates.prefix(20))
+            candidates: Array(dedupedCandidates.prefix(20))
         )
 
         if !report.candidates.isEmpty {
@@ -321,6 +322,7 @@ final class DomainScanner {
             let firstVariant = variants?.first
             let currency = stringValue(firstVariant?["currency_code"]) ?? stringValue(object["currency"])
             let price = Money.parse(firstVariant?["price"], currency: currency)
+                ?? Money.parseFirstPrice(in: title, currency: currency)
             let description = stringValue(product["body_html"]).map(stripHTML)
             let imageURL = shopifyImageURL(product: product, sourceURL: sourceURL)
             let productURL = productURLForShopifyProduct(product, domain: domain)
@@ -349,6 +351,7 @@ final class DomainScanner {
         return products.prefix(10).compactMap { product in
             guard let title = stringValue(product["name"]), !title.isEmpty else { return nil }
             let price = Money.parse(product["price"], currency: stringValue(product["currency_code"]))
+                ?? Money.parseFirstPrice(in: title, currency: stringValue(product["currency_code"]))
             let description = stringValue(product["short_description"]).map(stripHTML)
             let imageURL = ((product["images"] as? [[String: Any]])?.first?["src"]).flatMap(stringValue).flatMap(URL.init(string:))
             let productURL = stringValue(product["permalink"]).flatMap(URL.init(string:))
@@ -400,6 +403,8 @@ final class DomainScanner {
                     ?? "\(method) \(path)"
                 let description = stringValue(operation["description"])
                 let price = priceHint(from: operation)
+                    ?? Money.parseFirstPrice(in: title)
+                    ?? Money.parseFirstPrice(in: description)
                 let paymentHint = paymentHint(from: operation)
                 let relevant = price != nil || paymentHint != nil || isPurchaseRelevant(path: path, title: title, description: description)
                 let confidence = relevant ? 0.72 : 0.52
@@ -458,8 +463,12 @@ final class DomainScanner {
             }
 
             let offer = dictionary["offers"] as? [String: Any]
+            let description = stringValue(dictionary["description"]).map(stripHTML)
             let price = Money.parse(
                 dictionary["price"] ?? dictionary["amount"] ?? offer?["price"],
+                currency: stringValue(dictionary["currency"]) ?? stringValue(dictionary["priceCurrency"]) ?? stringValue(offer?["priceCurrency"])
+            ) ?? Money.parseFirstPrice(
+                in: [title, description].compactMap { $0 }.joined(separator: " "),
                 currency: stringValue(dictionary["currency"]) ?? stringValue(dictionary["priceCurrency"]) ?? stringValue(offer?["priceCurrency"])
             )
 
@@ -479,7 +488,7 @@ final class DomainScanner {
                 domain: domain,
                 merchantName: merchantName(for: domain),
                 title: title,
-                description: stringValue(dictionary["description"]).map(stripHTML),
+                description: description,
                 price: price,
                 imageURL: imageURL,
                 productURL: productURL,
@@ -521,8 +530,12 @@ final class DomainScanner {
                 }
 
                 let offer = dictionary["offers"] as? [String: Any]
+                let description = stringValue(dictionary["description"]).map(stripHTML)
                 let price = Money.parse(
                     dictionary["price"] ?? offer?["price"],
+                    currency: stringValue(dictionary["priceCurrency"]) ?? stringValue(offer?["priceCurrency"])
+                ) ?? Money.parseFirstPrice(
+                    in: [title, description].compactMap { $0 }.joined(separator: " "),
                     currency: stringValue(dictionary["priceCurrency"]) ?? stringValue(offer?["priceCurrency"])
                 )
 
@@ -531,7 +544,7 @@ final class DomainScanner {
                         domain: domain,
                         merchantName: merchantName(for: domain),
                         title: title,
-                        description: stringValue(dictionary["description"]).map(stripHTML),
+                        description: description,
                         price: price,
                         imageURL: imageURL(from: dictionary["image"], sourceURL: sourceURL),
                         productURL: stringValue(dictionary["url"]).flatMap { URL(string: $0, relativeTo: sourceURL)?.absoluteURL } ?? sourceURL,
@@ -548,13 +561,15 @@ final class DomainScanner {
     }
 
     private func parseOpenGraphProduct(html: String, domain: String, sourceURL: URL) -> [PurchaseCandidate] {
-        guard
-            let title = metaValue(in: html, keys: ["og:title", "twitter:title"]),
-            let price = Money.parse(
-                metaValue(in: html, keys: ["product:price:amount", "og:price:amount", "twitter:data1"]),
-                currency: metaValue(in: html, keys: ["product:price:currency", "og:price:currency"])
-            )
-        else {
+        guard let title = metaValue(in: html, keys: ["og:title", "twitter:title"]) else {
+            return []
+        }
+
+        let description = metaValue(in: html, keys: ["og:description", "description"]).map(stripHTML)
+        guard let price = Money.parse(
+            metaValue(in: html, keys: ["product:price:amount", "og:price:amount", "twitter:data1"]),
+            currency: metaValue(in: html, keys: ["product:price:currency", "og:price:currency"])
+        ) ?? Money.parseFirstPrice(in: [title, description].compactMap { $0 }.joined(separator: " ")) else {
             return []
         }
 
@@ -566,7 +581,7 @@ final class DomainScanner {
                 domain: domain,
                 merchantName: merchantName(for: domain),
                 title: title,
-                description: metaValue(in: html, keys: ["og:description", "description"]).map(stripHTML),
+                description: description,
                 price: price,
                 imageURL: imageURL,
                 productURL: sourceURL,
@@ -592,7 +607,7 @@ final class DomainScanner {
             for match in regex.matches(in: text, range: range).prefix(300) {
                 let captureIndex = match.numberOfRanges > 1 ? 1 : 0
                 guard let matchRange = Range(match.range(at: captureIndex), in: text) else { continue }
-                let raw = String(text[matchRange]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>),."))
+                let raw = cleanURLCandidate(String(text[matchRange]))
                 guard let url = URL(string: raw, relativeTo: baseURL)?.absoluteURL else { continue }
                 if shouldFollow(url, domain: domain) {
                     urls.append(url)
@@ -606,7 +621,7 @@ final class DomainScanner {
     private func shouldFollow(_ url: URL, domain: String) -> Bool {
         guard url.scheme == "https" || url.scheme == "http" else { return false }
         guard url.host?.lowercased() == domain.lowercased() else { return false }
-        if isBinary(contentType: nil, url: url) { return false }
+        if isBinary(contentType: nil, url: url) || looksLikeBinaryAssetURL(url) { return false }
 
         let value = url.absoluteString.lowercased()
         let tokens = [
@@ -620,13 +635,20 @@ final class DomainScanner {
             "products.json",
             "product",
             "pricing",
+            "price",
             "checkout",
             "cart",
             "order",
             "billing",
             "subscription",
-            "api",
-            "x402"
+            "offer",
+            "buy",
+            "purchase",
+            "artifact",
+            "api-doc",
+            "api-reference",
+            "x402",
+            "wp-json/wc/store/products"
         ]
         return tokens.contains { value.contains($0) }
     }
@@ -661,6 +683,37 @@ final class DomainScanner {
         if binaryExtensions.contains(url.pathExtension.lowercased()) { return true }
         guard let contentType = contentType?.lowercased() else { return false }
         return contentType.hasPrefix("image/") || contentType.hasPrefix("video/") || contentType.hasPrefix("font/")
+    }
+
+    private func looksLikeBinaryAssetURL(_ url: URL) -> Bool {
+        let path = url.path.lowercased()
+        let blockedPathParts = [
+            "/attachments/",
+            "/attachment/",
+            "/assets/",
+            "/images/",
+            "/image/",
+            "/media/",
+            "/uploads/",
+            "/static/",
+            "/_next/image",
+            "/cdn-cgi/image"
+        ]
+
+        return blockedPathParts.contains { path.contains($0) }
+    }
+
+    private func cleanURLCandidate(_ value: String) -> String {
+        var cleaned = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>"))
+
+        let trailingPunctuation = CharacterSet(charactersIn: ".,;:)]}")
+        while let last = cleaned.unicodeScalars.last, trailingPunctuation.contains(last) {
+            cleaned.removeLast()
+        }
+
+        return cleaned
     }
 
     private func stringValue(_ value: Any?) -> String? {
@@ -867,15 +920,63 @@ final class DomainScanner {
     }
 
     private func dedupeCandidates(_ candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
-        var seen = Set<String>()
-        var deduped: [PurchaseCandidate] = []
+        var keys: [String] = []
+        var bestByKey: [String: PurchaseCandidate] = [:]
 
-        for candidate in candidates where !seen.contains(candidate.fingerprint) {
-            seen.insert(candidate.fingerprint)
-            deduped.append(candidate)
+        for candidate in candidates {
+            let key = dedupeKey(for: candidate)
+            if let existing = bestByKey[key] {
+                if candidateScore(candidate) > candidateScore(existing) {
+                    bestByKey[key] = candidate
+                }
+            } else {
+                keys.append(key)
+                bestByKey[key] = candidate
+            }
         }
 
-        return deduped
+        return keys.compactMap { bestByKey[$0] }
+    }
+
+    private func dedupeKey(for candidate: PurchaseCandidate) -> String {
+        let title = normalizeForDedupe(candidate.title)
+        let price = candidate.price.map { "\($0.currency):\($0.amount)" } ?? "no-price"
+        return "\(candidate.domain)|\(title)|\(price)"
+    }
+
+    private func normalizeForDedupe(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"[\p{P}\p{S}]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func candidateScore(_ candidate: PurchaseCandidate) -> Double {
+        var score = candidate.confidence
+        if candidate.price != nil { score += 0.30 }
+        if candidate.productURL != nil { score += 0.15 }
+        if candidate.imageURL != nil { score += 0.10 }
+        score += sourcePriority(candidate.sourceKind)
+        return score
+    }
+
+    private func sourcePriority(_ kind: CandidateSourceKind) -> Double {
+        switch kind {
+        case .productsJSON, .woocommerce:
+            return 0.08
+        case .jsonLD:
+            return 0.07
+        case .ucp, .commerceManifest, .x402:
+            return 0.06
+        case .openAPI:
+            return 0.05
+        case .agentCard, .siteAI:
+            return 0.03
+        case .htmlFallback:
+            return 0.01
+        }
     }
 }
 

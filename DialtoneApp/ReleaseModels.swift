@@ -54,6 +54,64 @@ struct Money: Codable, Hashable {
 
         return Money(amount: decimal, currency: detectedCurrency)
     }
+
+    static func parseFirstPrice(in value: String?, currency: String? = nil) -> Money? {
+        guard let value else { return nil }
+
+        let normalized = value
+            .replacingOccurrences(of: ",", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let symbolPattern = #"([$€£₹])\s*([0-9]+(?:\.[0-9]{1,6})?)"#
+        if let match = firstMatch(in: normalized, pattern: symbolPattern),
+           match.count == 2,
+           let decimal = Decimal(string: match[1]) {
+            return Money(amount: decimal, currency: currencyCode(for: match[0], fallback: currency))
+        }
+
+        let prefixedCurrencyPattern = #"(?i)\b(USD|USDC|EUR|GBP|INR)\s*([0-9]+(?:\.[0-9]{1,6})?)"#
+        if let match = firstMatch(in: normalized, pattern: prefixedCurrencyPattern),
+           match.count == 2,
+           let decimal = Decimal(string: match[1]) {
+            return Money(amount: decimal, currency: match[0].uppercased())
+        }
+
+        let suffixedCurrencyPattern = #"(?i)\b([0-9]+(?:\.[0-9]{1,6})?)\s*(USD|USDC|EUR|GBP|INR)\b"#
+        if let match = firstMatch(in: normalized, pattern: suffixedCurrencyPattern),
+           match.count == 2,
+           let decimal = Decimal(string: match[0]) {
+            return Money(amount: decimal, currency: match[1].uppercased())
+        }
+
+        return nil
+    }
+
+    private static func firstMatch(in value: String, pattern: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        guard let match = regex.firstMatch(in: value, range: range), match.numberOfRanges > 1 else {
+            return nil
+        }
+
+        return (1..<match.numberOfRanges).compactMap { index in
+            guard let matchRange = Range(match.range(at: index), in: value) else { return nil }
+            return String(value[matchRange])
+        }
+    }
+
+    private static func currencyCode(for symbol: String, fallback: String?) -> String {
+        if let fallback {
+            return fallback.uppercased()
+        }
+
+        switch symbol {
+        case "€": return "EUR"
+        case "£": return "GBP"
+        case "₹": return "INR"
+        default: return "USD"
+        }
+    }
 }
 
 enum DiscoverySource: String, Codable, Hashable, CaseIterable {
@@ -213,8 +271,17 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         sourceURL: URL,
         productURL: URL?
     ) -> String {
+        _ = sourceURL
         let pricePart = price.map { "\($0.currency):\($0.amount)" } ?? "no-price"
-        let rawValue = "\(domain)|\(title)|\(pricePart)|\(sourceURL.absoluteString)|\(productURL?.absoluteString ?? "no-product")"
+        let normalizedTitle = title
+            .lowercased()
+            .replacingOccurrences(of: #"[\p{P}\p{S}]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let productPart = productURL.map { url in
+            "\(url.host?.lowercased() ?? "")\(url.path)"
+        } ?? "no-product"
+        let rawValue = "\(domain)|\(normalizedTitle)|\(pricePart)|\(productPart)"
         let digest = SHA256.hash(data: Data(rawValue.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
