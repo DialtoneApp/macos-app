@@ -9,8 +9,8 @@ struct AppEnvironment {
 
     static var current: AppEnvironment {
         AppEnvironment(
-            frontendURL: configuredURL(named: "FRONTEND_URL", defaultURL: developmentFrontendURL),
-            apiBaseURL: configuredURL(named: "API_BASE_URL", defaultURL: productionFrontendURL)
+            frontendURL: configuredURL(named: "FRONTEND_URL", defaultURL: defaultFrontendURL),
+            apiBaseURL: configuredURL(named: "API_BASE_URL", defaultURL: defaultAPIBaseURL)
         )
     }
 
@@ -20,6 +20,22 @@ struct AppEnvironment {
 
     func apiPath(_ path: String) -> URL {
         apiBaseURL.appendingPath(path)
+    }
+
+    private static var defaultFrontendURL: URL {
+        #if DEBUG
+        developmentFrontendURL
+        #else
+        productionFrontendURL
+        #endif
+    }
+
+    private static var defaultAPIBaseURL: URL {
+        #if DEBUG
+        developmentFrontendURL
+        #else
+        productionFrontendURL
+        #endif
     }
 
     private static func configuredURL(named name: String, defaultURL: URL) -> URL {
