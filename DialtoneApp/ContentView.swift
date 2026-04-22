@@ -23,7 +23,7 @@ enum ShoppingCategory: String, CaseIterable, Identifiable {
         switch self {
         case .household: return "house"
         case .digitalTools: return "keyboard"
-        case .aiServices: return "sparkles"
+        case .aiServices: return "cpu"
         case .travel: return "airplane"
         case .apparel: return "tshirt"
         case .electronics: return "desktopcomputer"
@@ -221,9 +221,17 @@ struct HeroPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Bot with a budget", systemImage: "")
-                        .font(.headline)
-                        .foregroundStyle(.teal)
+                    HStack(spacing: 6) {
+                        Image("MenuBarIcon")
+                            .resizable()
+                            .renderingMode(.template)
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+
+                        Text("Bot with a budget")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.teal)
 
                     Text("DialtoneApp Desktop")
                         .font(.system(size: 38, weight: .semibold, design: .rounded))
@@ -624,7 +632,11 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Image(systemName: "")
+                Image("MenuBarIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
                     .foregroundStyle(.teal)
                 Text("DialtoneApp Desktop")
                     .font(.headline)
