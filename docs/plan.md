@@ -154,6 +154,7 @@
 - Added a scanner-tab offer spotlight that rotates through discovered offers one at a time every 3 seconds without affecting scanning or the Found Items tab.
 - Fixed the scanner-tab offer spotlight so newly discovered candidates queue behind the currently visible card instead of replacing it before the 3-second rotation interval.
 - Changed the scanner-tab offer spotlight to rotate by domain round-robin, so one noisy merchant cannot fill the preview before other discovered domains get a turn.
+- Fixed candidate dedupe so preferred purchase/action cards inherit supplemental image, product URL, price, description, and API-call fields from duplicate lower-scored cards instead of losing available product photos.
 
 ### Still pending for public v0.0.1
 

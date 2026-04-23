@@ -483,8 +483,56 @@ enum CandidateDedupe {
         return score
     }
 
+    @discardableResult
+    static func mergeSupplementalFields(from source: PurchaseCandidate, into target: inout PurchaseCandidate) -> Bool {
+        var changed = false
+
+        if target.imageURL == nil, let imageURL = source.imageURL {
+            target.imageURL = imageURL
+            changed = true
+        }
+
+        if target.productURL == nil, let productURL = source.productURL {
+            target.productURL = productURL
+            changed = true
+        }
+
+        if target.price == nil, let price = source.price {
+            target.price = price
+            changed = true
+        }
+
+        let targetDescription = target.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let sourceDescription = source.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if targetDescription.isEmpty, !sourceDescription.isEmpty {
+            target.description = source.description
+            changed = true
+        }
+
+        if target.discoveredApiCall == nil, let discoveredApiCall = source.discoveredApiCall {
+            target.discoveredApiCall = discoveredApiCall
+            changed = true
+        }
+
+        if changed {
+            target.fingerprint = PurchaseCandidate.makeFingerprint(
+                domain: target.domain,
+                title: target.title,
+                price: target.price,
+                sourceURL: target.sourceURL,
+                productURL: target.productURL
+            )
+        }
+
+        return changed
+    }
+
     private static func bestCandidate(in candidates: [PurchaseCandidate]) -> PurchaseCandidate {
-        candidates.max { score($0) < score($1) } ?? candidates[0]
+        var best = candidates.max { score($0) < score($1) } ?? candidates[0]
+        for candidate in candidates where candidate.id != best.id {
+            mergeSupplementalFields(from: candidate, into: &best)
+        }
+        return best
     }
 
     private static func commercialOfferKey(for candidate: PurchaseCandidate) -> String? {

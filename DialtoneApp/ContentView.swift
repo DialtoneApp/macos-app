@@ -205,15 +205,29 @@ final class BotShoppingModel: ObservableObject {
                 if candidates[existingIndex].decision == .pending,
                    CandidateDedupe.isPreferred(candidate, over: candidates[existingIndex]) {
                     let replacedCandidate = candidates[existingIndex]
-                    candidates[existingIndex] = candidate
+                    var improvedCandidate = candidate
+                    CandidateDedupe.mergeSupplementalFields(from: replacedCandidate, into: &improvedCandidate)
+                    candidates[existingIndex] = improvedCandidate
                     logs.append(.agent, "Candidate improved", metadata: [
-                        "candidate_id": candidate.id.uuidString,
+                        "candidate_id": improvedCandidate.id.uuidString,
                         "replaced_candidate_id": replacedCandidate.id.uuidString,
-                        "domain": candidate.domain,
-                        "title": candidate.title,
-                        "source": candidate.sourceKind.rawValue,
-                        "price": candidate.price?.displayValue ?? "none"
+                        "domain": improvedCandidate.domain,
+                        "title": improvedCandidate.title,
+                        "source": improvedCandidate.sourceKind.rawValue,
+                        "price": improvedCandidate.price?.displayValue ?? "none",
+                        "image": improvedCandidate.imageURL == nil ? "none" : "present"
                     ])
+                } else if candidates[existingIndex].decision == .pending {
+                    var existingCandidate = candidates[existingIndex]
+                    if CandidateDedupe.mergeSupplementalFields(from: candidate, into: &existingCandidate) {
+                        candidates[existingIndex] = existingCandidate
+                        logs.append(.agent, "Candidate enriched", metadata: [
+                            "candidate_id": existingCandidate.id.uuidString,
+                            "domain": existingCandidate.domain,
+                            "title": existingCandidate.title,
+                            "image": existingCandidate.imageURL == nil ? "none" : "present"
+                        ])
+                    }
                 }
 
                 continue
