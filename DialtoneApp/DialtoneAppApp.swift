@@ -25,11 +25,31 @@ enum DialtoneAppOpenURLInbox {
 }
 
 @MainActor
+enum DialtoneAppWindowManager {
+    static func focusMainWindow() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
+        let mainWindows = NSApplication.shared.windows.filter { window in
+            window.title == "DialtoneApp Desktop" && window.isVisible
+        }
+
+        for duplicateWindow in mainWindows.dropFirst() {
+            duplicateWindow.close()
+        }
+
+        if let mainWindow = mainWindows.first {
+            mainWindow.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+@MainActor
 final class DialtoneAppOpenURLDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             DialtoneAppOpenURLInbox.enqueue(url)
         }
+        DialtoneAppWindowManager.focusMainWindow()
     }
 }
 
@@ -40,14 +60,14 @@ struct DialtoneAppApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup("DialtoneApp Desktop", id: "main") {
+        Window("DialtoneApp Desktop", id: "main") {
             ContentView()
                 .environmentObject(model)
                 .containerBackground(.regularMaterial, for: .window)
         }
         .windowResizability(.contentMinSize)
 
-        WindowGroup("Logs", id: "logs") {
+        Window("Logs", id: "logs") {
             LogWindow()
                 .environmentObject(model)
         }

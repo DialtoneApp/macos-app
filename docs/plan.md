@@ -149,6 +149,7 @@
 - Reused the same semantic commercial-offer dedupe at UI ingest time so broad product pages, JSON-LD, OpenAPI, UCP, commerce manifests, agent cards, and siteai.json no longer stack duplicate cards for one offer.
 - Made the `Needs bot-buyer card` account state clickable in the macOS overview and status strip so it opens the configured frontend `/bot-buyer` page.
 - Made the `Not signed in` account state clickable in the macOS overview and status strip so it starts the desktop login flow, and added a pointing-hand cursor for clickable account states.
+- Changed the macOS main UI and log UI to single-instance windows and focus the existing DialtoneApp Desktop window when a desktop auth callback arrives, instead of stacking duplicate main windows.
 
 ### Still pending for public v0.0.1
 
