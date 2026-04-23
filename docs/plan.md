@@ -152,6 +152,7 @@
 - Changed the macOS main UI to a single-instance window and focus the existing DialtoneApp Desktop window when a desktop auth callback arrives, instead of stacking duplicate main windows.
 - Removed the `View Log` menu item and log window feature, and replaced it with `Log Out`, which clears DialtoneApp Desktop app support files, local log files, app defaults, and the Keychain desktop session.
 - Added a scanner-tab offer spotlight that rotates through discovered offers one at a time every 3 seconds without affecting scanning or the Found Items tab.
+- Fixed the scanner-tab offer spotlight so newly discovered candidates queue behind the currently visible card instead of replacing it before the 3-second rotation interval.
 
 ### Still pending for public v0.0.1
 

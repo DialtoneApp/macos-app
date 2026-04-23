@@ -654,8 +654,11 @@ struct EmptyScannerState: View {
 
 struct RotatingOfferSpotlight: View {
     @EnvironmentObject private var model: BotShoppingModel
-    @State private var currentIndex = 0
+    @State private var currentCandidateID: UUID?
+    @State private var spotlightOrder: [UUID] = []
+    @State private var lastRotationDate = Date.distantPast
 
+    private let rotationInterval: TimeInterval = 3
     private let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -674,29 +677,60 @@ struct RotatingOfferSpotlight: View {
                     .animation(.easeInOut(duration: 0.2), value: candidate.id)
             }
         }
+        .onAppear {
+            syncSpotlightOrder(with: model.candidates.map(\.id))
+        }
         .onReceive(timer) { _ in
-            advance()
+            rotateIfReady()
         }
         .onChange(of: model.candidates.map(\.id)) { _, ids in
-            guard !ids.isEmpty else {
-                currentIndex = 0
-                return
-            }
-
-            if currentIndex >= ids.count {
-                currentIndex = 0
-            }
+            syncSpotlightOrder(with: ids)
         }
     }
 
     private var currentCandidate: PurchaseCandidate? {
         guard !model.candidates.isEmpty else { return nil }
-        return model.candidates[currentIndex % model.candidates.count]
+        if let currentCandidateID,
+           let candidate = model.candidates.first(where: { $0.id == currentCandidateID }) {
+            return candidate
+        }
+        return model.candidates.first
+    }
+
+    private func syncSpotlightOrder(with ids: [UUID]) {
+        guard !ids.isEmpty else {
+            spotlightOrder = []
+            currentCandidateID = nil
+            return
+        }
+
+        let availableIDs = Set(ids)
+        spotlightOrder.removeAll { !availableIDs.contains($0) }
+
+        let knownIDs = Set(spotlightOrder)
+        let newIDs = ids.filter { !knownIDs.contains($0) }
+        spotlightOrder.append(contentsOf: newIDs.reversed())
+
+        if let currentCandidateID, availableIDs.contains(currentCandidateID) {
+            return
+        }
+
+        currentCandidateID = spotlightOrder.first ?? ids.first
+    }
+
+    private func rotateIfReady() {
+        let now = Date()
+        guard now.timeIntervalSince(lastRotationDate) >= rotationInterval else { return }
+        lastRotationDate = now
+        advance()
     }
 
     private func advance() {
-        guard model.candidates.count > 1 else { return }
-        currentIndex = (currentIndex + 1) % model.candidates.count
+        guard spotlightOrder.count > 1 else { return }
+
+        let currentIndex = currentCandidateID.flatMap { spotlightOrder.firstIndex(of: $0) } ?? -1
+        let nextIndex = (currentIndex + 1) % spotlightOrder.count
+        currentCandidateID = spotlightOrder[nextIndex]
     }
 }
 
