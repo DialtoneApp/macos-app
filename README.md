@@ -1,3 +1,5 @@
+[![Watch the video](https://img.youtube.com/vi/op1h_ghJvgU/0.jpg)](https://www.youtube.com/watch?v=op1h_ghJvgU)
+
 # DialtoneApp Desktop
 
 [DialtoneApp](https://dialtoneapp.com/) helps businesses become AI aware: discoverable by AI systems, readable through clean source pages and markdown mirrors, and ready to move toward agent-mediated sales flows when bots need to do more than quote a page. The public site frames that path as layers: SEO/AEO/GEO and `llms.txt` first, then runtime access through APIs, MCP, or A2A, commerce contracts such as UCP or ACP, and delegated payment authority such as AP2 or scoped tokens.
