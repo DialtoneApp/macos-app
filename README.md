@@ -1,16 +1,14 @@
-# DialtoneApp Desktop
+# DialtoneApp MacOS Desktop
+
+This is a v0.0.1 preview release of the idea of your own "bot with a budget" that looks for things a bot can buy.
 
 https://private-user-images.githubusercontent.com/127054/582759002-e1345145-2786-46d0-a000-5d762d124d2b.mp4
 
-[![Video Demo](https://i.imgur.com/v5znnwY.png)](https://www.youtube.com/watch?v=op1h_ghJvgU)
+It scans a list of domains (hard coded for now) and looks for files like `/.well-known/ucp` or `.well-known/commerce` or x402 endpoints. Once you add a credit card that same card can be used without human approval in the future. This part is not in this v0.0.1 version yet, still a manual human click Yes, buy button.
 
-[DialtoneApp](https://dialtoneapp.com/) helps businesses become AI aware: discoverable by AI systems, readable through clean source pages and markdown mirrors, and ready to move toward agent-mediated sales flows when bots need to do more than quote a page. The public site frames that path as layers: SEO/AEO/GEO and `llms.txt` first, then runtime access through APIs, MCP, or A2A, commerce contracts such as UCP or ACP, and delegated payment authority such as AP2 or scoped tokens.
+The release is meant for developers who want to check out the technology, inspect how machine-readable commerce surfaces are discovered, and learn about the practical edges of [bot-to-bot payments](https://dialtoneapp.com/bot-to-bot). The app scans a fixed corpus of bot-buyable domains, records every network probe, extracts product or paid API candidates, and asks the user before starting a purchase flow.
 
-[DialtoneApp products](https://dialtoneapp.com/products): DialtoneApp Card Registry, DialtoneApp Scan + Support, and DialtoneApp Network. DialtoneApp Desktop is the fourth product.
-
-This repository is the native macOS desktop app for the v0.0.1 public release loop described in [docs/plan.md](docs/plan.md). The release is meant for developers who want to check out the technology, inspect how machine-readable commerce surfaces are discovered, and learn about the practical edges of [bot-to-bot payments](https://dialtoneapp.com/bot-to-bot). The app scans a fixed corpus of bot-buyable domains, records every network probe, extracts product or paid API candidates, and asks the user before starting a purchase flow.
-
-The desktop app also follows the public [dogfood plan](https://dialtoneapp.com/dogfood): prove the two-sided transaction flow in a constrained environment before pretending open-web bot buying is solved. For the broader commerce background, see the [DialtoneApp FAQ](https://dialtoneapp.com/faq).
+The [dogfood plan](https://dialtoneapp.com/dogfood): prove the two-sided transaction flow in a constrained environment before pretending open-web bot buying is solved. For the broader commerce background, see the [DialtoneApp FAQ](https://dialtoneapp.com/faq).
 
 ## Current Status
 
