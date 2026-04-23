@@ -38,6 +38,10 @@ final class PurchaseCoordinator {
         _ = openBotBuyerAndReturnURL()
     }
 
+    func openLogin() async -> URL {
+        await openDesktopLogin()
+    }
+
     func purchaseReadiness() async -> DesktopPurchaseReadiness {
         guard let token = loadDesktopSessionToken(), !token.isEmpty else {
             return .signedOut

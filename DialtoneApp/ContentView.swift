@@ -134,6 +134,14 @@ final class BotShoppingModel: ObservableObject {
         status = "Opening bot-buyer setup"
     }
 
+    func openLogin() {
+        guard purchaseReadiness == .signedOut else { return }
+        status = "Opening DialtoneApp login"
+        Task {
+            _ = await purchaseCoordinator.openLogin()
+        }
+    }
+
     func handleIncomingURL(_ url: URL) async {
         let handled = await purchaseCoordinator.handleAuthCallback(url)
         if handled {
@@ -481,9 +489,9 @@ struct AccountReadinessPill: View {
     @EnvironmentObject private var model: BotShoppingModel
 
     var body: some View {
-        if model.purchaseReadiness == .signedInNeedsCard {
+        if model.purchaseReadiness.isAccountSetupLink {
             Button {
-                model.openBotBuyer()
+                model.openAccountSetup()
             } label: {
                 MetricPill(
                     icon: model.purchaseReadiness.systemImage,
@@ -493,7 +501,8 @@ struct AccountReadinessPill: View {
                 )
             }
             .buttonStyle(.plain)
-            .help("Open bot-buyer")
+            .pointingHandCursor()
+            .help(model.purchaseReadiness.accountSetupHelp)
         } else {
             MetricPill(
                 icon: model.purchaseReadiness.systemImage,
@@ -509,18 +518,32 @@ struct AccountReadinessStatus: View {
     @EnvironmentObject private var model: BotShoppingModel
 
     var body: some View {
-        if model.purchaseReadiness == .signedInNeedsCard {
+        if model.purchaseReadiness.isAccountSetupLink {
             Button {
-                model.openBotBuyer()
+                model.openAccountSetup()
             } label: {
                 Label(model.purchaseReadiness.label, systemImage: model.purchaseReadiness.systemImage)
             }
             .buttonStyle(.link)
             .foregroundStyle(model.purchaseReadiness.tint)
-            .help("Open bot-buyer")
+            .pointingHandCursor()
+            .help(model.purchaseReadiness.accountSetupHelp)
         } else {
             Label(model.purchaseReadiness.label, systemImage: model.purchaseReadiness.systemImage)
                 .foregroundStyle(model.purchaseReadiness.tint)
+        }
+    }
+}
+
+private extension BotShoppingModel {
+    func openAccountSetup() {
+        switch purchaseReadiness {
+        case .signedOut:
+            openLogin()
+        case .signedInNeedsCard:
+            openBotBuyer()
+        case .checking, .signedInCheckingCard, .ready, .unavailable:
+            break
         }
     }
 }
@@ -535,6 +558,50 @@ private extension DesktopPurchaseReadiness {
         case .ready:
             return .green
         }
+    }
+
+    var isAccountSetupLink: Bool {
+        self == .signedOut || self == .signedInNeedsCard
+    }
+
+    var accountSetupHelp: String {
+        switch self {
+        case .signedOut:
+            return "Open login"
+        case .signedInNeedsCard:
+            return "Open bot-buyer"
+        case .checking, .signedInCheckingCard, .ready, .unavailable:
+            return ""
+        }
+    }
+}
+
+private struct PointingHandCursorModifier: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.pointingHand.push()
+                    isHovering = true
+                } else if isHovering {
+                    NSCursor.pop()
+                    isHovering = false
+                }
+            }
+            .onDisappear {
+                if isHovering {
+                    NSCursor.pop()
+                    isHovering = false
+                }
+            }
+    }
+}
+
+private extension View {
+    func pointingHandCursor() -> some View {
+        modifier(PointingHandCursorModifier())
     }
 }
 
