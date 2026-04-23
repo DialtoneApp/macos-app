@@ -143,6 +143,7 @@
 - Added a user-linked bot-purchase history path for `/bot-buyer`, including a `user_id` migration for `commerce_membership_intents` with owner-email fallback for older rows.
 - Updated DialtoneApp Network settlement so a settled bot-bought membership persists the user's Stripe subscription and card summary, allowing `/domains` and membership UI to show the account as active after refresh/focus.
 - Added membership-state recovery from the latest settled bot-purchase receipt so the already-tested local purchase can backfill the user's Stripe subscription on the next membership fetch.
+- Changed membership bot purchases to be account-level: only `owner_email` is required, `website_domain` is optional attribution, and the pending `commerce_membership_intents` migration now adds `user_id` while making `website_domain` nullable.
 
 ### Still pending for public v0.0.1
 
