@@ -656,6 +656,7 @@ struct RotatingOfferSpotlight: View {
     @EnvironmentObject private var model: BotShoppingModel
     @State private var currentCandidateID: UUID?
     @State private var spotlightOrder: [UUID] = []
+    @State private var shownDomainsInRound = Set<String>()
     @State private var lastRotationDate = Date.distantPast
 
     private let rotationInterval: TimeInterval = 3
@@ -701,21 +702,27 @@ struct RotatingOfferSpotlight: View {
         guard !ids.isEmpty else {
             spotlightOrder = []
             currentCandidateID = nil
+            shownDomainsInRound = []
             return
         }
 
         let availableIDs = Set(ids)
         spotlightOrder.removeAll { !availableIDs.contains($0) }
+        shownDomainsInRound = shownDomainsInRound.intersection(Set(model.candidates.map { normalizedDomain($0.domain) }))
 
         let knownIDs = Set(spotlightOrder)
         let newIDs = ids.filter { !knownIDs.contains($0) }
         spotlightOrder.append(contentsOf: newIDs.reversed())
 
         if let currentCandidateID, availableIDs.contains(currentCandidateID) {
+            rememberDisplayedDomain(for: currentCandidateID)
             return
         }
 
         currentCandidateID = spotlightOrder.first ?? ids.first
+        if let currentCandidateID {
+            rememberDisplayedDomain(for: currentCandidateID)
+        }
     }
 
     private func rotateIfReady() {
@@ -728,9 +735,68 @@ struct RotatingOfferSpotlight: View {
     private func advance() {
         guard spotlightOrder.count > 1 else { return }
 
+        if let currentCandidateID {
+            rememberDisplayedDomain(for: currentCandidateID)
+        }
+
+        if let nextID = nextCandidateID(excluding: shownDomainsInRound) {
+            currentCandidateID = nextID
+            rememberDisplayedDomain(for: nextID)
+            return
+        }
+
+        if let currentCandidateID,
+           let currentCandidate = candidate(for: currentCandidateID) {
+            shownDomainsInRound = Set([normalizedDomain(currentCandidate.domain)])
+        } else {
+            shownDomainsInRound = []
+        }
+
+        if let nextID = nextCandidateID(excluding: shownDomainsInRound) {
+            currentCandidateID = nextID
+            rememberDisplayedDomain(for: nextID)
+            return
+        }
+
         let currentIndex = currentCandidateID.flatMap { spotlightOrder.firstIndex(of: $0) } ?? -1
         let nextIndex = (currentIndex + 1) % spotlightOrder.count
         currentCandidateID = spotlightOrder[nextIndex]
+        if let currentCandidateID {
+            rememberDisplayedDomain(for: currentCandidateID)
+        }
+    }
+
+    private func nextCandidateID(excluding excludedDomains: Set<String>) -> UUID? {
+        guard !spotlightOrder.isEmpty else { return nil }
+
+        let currentIndex = currentCandidateID.flatMap { spotlightOrder.firstIndex(of: $0) } ?? -1
+        for offset in 1...spotlightOrder.count {
+            let candidateID = spotlightOrder[(currentIndex + offset) % spotlightOrder.count]
+            guard candidateID != currentCandidateID,
+                  let candidate = candidate(for: candidateID),
+                  !excludedDomains.contains(normalizedDomain(candidate.domain)) else {
+                continue
+            }
+            return candidateID
+        }
+
+        return nil
+    }
+
+    private func rememberDisplayedDomain(for candidateID: UUID) {
+        guard let candidate = candidate(for: candidateID) else { return }
+        shownDomainsInRound.insert(normalizedDomain(candidate.domain))
+    }
+
+    private func candidate(for id: UUID) -> PurchaseCandidate? {
+        model.candidates.first { $0.id == id }
+    }
+
+    private func normalizedDomain(_ domain: String) -> String {
+        domain
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^www\."#, with: "", options: .regularExpression)
     }
 }
 
