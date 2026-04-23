@@ -144,6 +144,7 @@
 - Updated DialtoneApp Network settlement so a settled bot-bought membership persists the user's Stripe subscription and card summary, allowing `/domains` and membership UI to show the account as active after refresh/focus.
 - Added membership-state recovery from the latest settled bot-purchase receipt so the already-tested local purchase can backfill the user's Stripe subscription on the next membership fetch.
 - Changed membership bot purchases to be account-level: only `owner_email` is required, `website_domain` is optional attribution, and the pending `commerce_membership_intents` migration now adds `user_id` while making `website_domain` nullable.
+- Added generic machine-readable offer dedupe so OpenAPI, UCP, commerce manifest, agent-card, and siteai candidates for the same commercial offer collapse to the best card instead of showing duplicate confidence variants.
 
 ### Still pending for public v0.0.1
 

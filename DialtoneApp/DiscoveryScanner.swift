@@ -1310,7 +1310,7 @@ final class DomainScanner {
         var groupOrder: [String] = []
 
         for candidate in candidates {
-            let key = titleDedupeKey(for: candidate)
+            let key = candidateDedupeKey(for: candidate)
             if groups[key] == nil {
                 groups[key] = []
                 groupOrder.append(key)
@@ -1349,6 +1349,49 @@ final class DomainScanner {
         candidates.max { candidateScore($0) < candidateScore($1) } ?? candidates[0]
     }
 
+    private func candidateDedupeKey(for candidate: PurchaseCandidate) -> String {
+        if let offerKey = machineReadableOfferKey(for: candidate) {
+            return offerKey
+        }
+
+        return titleDedupeKey(for: candidate)
+    }
+
+    private func machineReadableOfferKey(for candidate: PurchaseCandidate) -> String? {
+        guard shouldClusterMachineReadableOffer(candidate) else { return nil }
+
+        let value = normalizeForDedupe([
+            candidate.title,
+            candidate.description ?? "",
+            candidate.sourceURL.path,
+            candidate.productURL?.path ?? "",
+            candidate.discoveredApiCall?.capability ?? ""
+        ].joined(separator: " "))
+
+        let families: [(String, [String])] = [
+            ("membership", ["membership", "member"]),
+            ("subscription", ["subscription", "subscribe", "plan", "monthly", "yearly"]),
+            ("license", ["license", "licensing", "seat"]),
+            ("checkout", ["checkout", "cart", "order"]),
+            ("purchase", ["purchase", "buy", "payment", "billing", "charge", "invoice"])
+        ]
+
+        for family in families where family.1.contains(where: { value.contains($0) }) {
+            return "\(candidate.domain)|machine-offer|\(family.0)"
+        }
+
+        return nil
+    }
+
+    private func shouldClusterMachineReadableOffer(_ candidate: PurchaseCandidate) -> Bool {
+        switch candidate.sourceKind {
+        case .openAPI, .ucp, .commerceManifest, .agentCard, .siteAI:
+            return true
+        case .productsJSON, .woocommerce, .jsonLD, .htmlFallback, .x402:
+            return false
+        }
+    }
+
     private func titleDedupeKey(for candidate: PurchaseCandidate) -> String {
         let title = normalizeForDedupe(candidate.title)
         return "\(candidate.domain)|\(title)"
@@ -1368,6 +1411,7 @@ final class DomainScanner {
         if candidate.price != nil { score += 0.30 }
         if candidate.productURL != nil { score += 0.15 }
         if candidate.imageURL != nil { score += 0.10 }
+        if candidate.discoveredApiCall != nil { score += 0.04 }
         score += sourcePriority(candidate.sourceKind)
         return score
     }
@@ -1378,10 +1422,12 @@ final class DomainScanner {
             return 0.08
         case .jsonLD:
             return 0.07
-        case .ucp, .commerceManifest, .x402:
+        case .commerceManifest, .x402:
             return 0.06
         case .openAPI:
             return 0.05
+        case .ucp:
+            return 0.04
         case .agentCard, .siteAI:
             return 0.03
         case .htmlFallback:
