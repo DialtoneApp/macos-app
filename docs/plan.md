@@ -161,6 +161,7 @@
 - Added domain-level image fallback: candidates without product images now inherit the homepage `og:image` / Twitter image, or favicon when no metadata image is available.
 - Tagged favicon fallback images separately and render them as small icons inside the thumbnail frame instead of scaling them like product photos.
 - Randomized scanner scheduling: startup now scans a shuffled mix of high-signal and extra hard-coded domains, then runs shuffled full-corpus rounds with a recent-domain window to avoid repeating the same domains immediately.
+- Changed the scanner-tab offer spotlight to rotate through image-backed candidates instead of one best card per domain, prefer not-yet-shown offers, and avoid the same domain back-to-back when other visual offers are available.
 
 ### Still pending for public v0.0.1
 

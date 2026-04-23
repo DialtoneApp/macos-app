@@ -666,11 +666,26 @@ struct EmptyScannerState: View {
     }
 }
 
+struct EmptyVisualOfferState: View {
+    var body: some View {
+        Card(title: "Waiting for visual offers", icon: "photo") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("DialtoneApp Desktop has found offers, but the scanner is waiting for one with a product image, site image, or favicon.")
+                    .font(.headline)
+
+                Text("The full list stays available in the Found Items tab.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 struct RotatingOfferSpotlight: View {
     @EnvironmentObject private var model: BotShoppingModel
     @State private var currentCandidateID: UUID?
     @State private var spotlightOrder: [UUID] = []
-    @State private var shownDomainsInRound = Set<String>()
+    @State private var displayedCandidateIDs = Set<UUID>()
+    @State private var lastDisplayedDomain: String?
     @State private var lastRotationDate = Date.distantPast
 
     private let rotationInterval: TimeInterval = 3
@@ -690,54 +705,63 @@ struct RotatingOfferSpotlight: View {
                     .id(candidate.id)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.2), value: candidate.id)
+            } else {
+                EmptyVisualOfferState()
             }
         }
         .onAppear {
-            syncSpotlightOrder(with: model.candidates.map(\.id))
+            syncSpotlightOrder(with: visualCandidateIDs)
         }
         .onReceive(timer) { _ in
             rotateIfReady()
         }
-        .onChange(of: model.candidates.map(\.id)) { _, ids in
+        .onChange(of: visualCandidateIDs) { _, ids in
             syncSpotlightOrder(with: ids)
         }
     }
 
     private var currentCandidate: PurchaseCandidate? {
-        guard !model.candidates.isEmpty else { return nil }
+        guard !visualCandidateIDs.isEmpty else { return nil }
         if let currentCandidateID,
-           let candidate = model.candidates.first(where: { $0.id == currentCandidateID }) {
+           let candidate = candidate(for: currentCandidateID),
+           candidate.imageURL != nil {
             return candidate
         }
-        return model.candidates.first
+        return visualCandidateIDs.first.flatMap(candidate(for:))
+    }
+
+    private var visualCandidateIDs: [UUID] {
+        model.candidates
+            .filter { $0.imageURL != nil }
+            .map(\.id)
     }
 
     private func syncSpotlightOrder(with ids: [UUID]) {
-        guard !ids.isEmpty else {
+        let visualIDs = ids.filter { candidate(for: $0)?.imageURL != nil }
+        guard !visualIDs.isEmpty else {
             spotlightOrder = []
             currentCandidateID = nil
-            shownDomainsInRound = []
+            displayedCandidateIDs = []
+            lastDisplayedDomain = nil
             return
         }
 
-        let availableIDs = Set(ids)
+        let availableIDs = Set(visualIDs)
         spotlightOrder.removeAll { !availableIDs.contains($0) }
-        shownDomainsInRound = shownDomainsInRound.intersection(Set(model.candidates.map { normalizedDomain($0.domain) }))
+        displayedCandidateIDs = displayedCandidateIDs.intersection(availableIDs)
 
         let knownIDs = Set(spotlightOrder)
-        let newIDs = ids.filter { !knownIDs.contains($0) }
+        let newIDs = visualIDs.filter { !knownIDs.contains($0) }
         spotlightOrder.append(contentsOf: newIDs.reversed())
 
         if let currentCandidateID, availableIDs.contains(currentCandidateID) {
-            rememberDisplayedDomain(for: currentCandidateID)
+            rememberDisplayedCandidate(currentCandidateID)
             return
         }
 
-        if let firstCandidateID = spotlightOrder.first ?? ids.first {
-            currentCandidateID = bestPreviewCandidateID(near: firstCandidateID) ?? firstCandidateID
-        }
+        currentCandidateID = nextVisualCandidateID(preferUndisplayed: true, avoidingDomain: lastDisplayedDomain) ?? spotlightOrder.first
         if let currentCandidateID {
-            rememberDisplayedDomain(for: currentCandidateID)
+            rememberDisplayedCandidate(currentCandidateID)
         }
     }
 
@@ -749,40 +773,31 @@ struct RotatingOfferSpotlight: View {
     }
 
     private func advance() {
-        guard spotlightOrder.count > 1 else { return }
+        guard !spotlightOrder.isEmpty else { return }
 
         if let currentCandidateID {
-            rememberDisplayedDomain(for: currentCandidateID)
+            rememberDisplayedCandidate(currentCandidateID)
         }
 
-        if let nextID = nextCandidateID(excluding: shownDomainsInRound) {
+        if let nextID = nextVisualCandidateID(preferUndisplayed: true, avoidingDomain: lastDisplayedDomain)
+            ?? nextVisualCandidateID(preferUndisplayed: true, avoidingDomain: nil) {
             currentCandidateID = nextID
-            rememberDisplayedDomain(for: nextID)
+            rememberDisplayedCandidate(nextID)
             return
         }
 
-        if let currentCandidateID,
-           let currentCandidate = candidate(for: currentCandidateID) {
-            shownDomainsInRound = Set([normalizedDomain(currentCandidate.domain)])
-        } else {
-            shownDomainsInRound = []
-        }
+        displayedCandidateIDs = currentCandidateID.map { Set([$0]) } ?? []
 
-        if let nextID = nextCandidateID(excluding: shownDomainsInRound) {
+        if let nextID = nextVisualCandidateID(preferUndisplayed: true, avoidingDomain: lastDisplayedDomain)
+            ?? nextVisualCandidateID(preferUndisplayed: true, avoidingDomain: nil)
+            ?? nextVisualCandidateID(preferUndisplayed: false, avoidingDomain: lastDisplayedDomain)
+            ?? nextVisualCandidateID(preferUndisplayed: false, avoidingDomain: nil) {
             currentCandidateID = nextID
-            rememberDisplayedDomain(for: nextID)
-            return
-        }
-
-        let currentIndex = currentCandidateID.flatMap { spotlightOrder.firstIndex(of: $0) } ?? -1
-        let nextIndex = (currentIndex + 1) % spotlightOrder.count
-        currentCandidateID = spotlightOrder[nextIndex]
-        if let currentCandidateID {
-            rememberDisplayedDomain(for: currentCandidateID)
+            rememberDisplayedCandidate(nextID)
         }
     }
 
-    private func nextCandidateID(excluding excludedDomains: Set<String>) -> UUID? {
+    private func nextVisualCandidateID(preferUndisplayed: Bool, avoidingDomain domain: String?) -> UUID? {
         guard !spotlightOrder.isEmpty else { return nil }
 
         let currentIndex = currentCandidateID.flatMap { spotlightOrder.firstIndex(of: $0) } ?? -1
@@ -790,40 +805,29 @@ struct RotatingOfferSpotlight: View {
             let candidateID = spotlightOrder[(currentIndex + offset) % spotlightOrder.count]
             guard candidateID != currentCandidateID,
                   let candidate = candidate(for: candidateID),
-                  !excludedDomains.contains(normalizedDomain(candidate.domain)) else {
+                  candidate.imageURL != nil else {
                 continue
             }
 
-            return bestPreviewCandidateID(forNormalizedDomain: normalizedDomain(candidate.domain)) ?? candidateID
+            if preferUndisplayed, displayedCandidateIDs.contains(candidateID) {
+                continue
+            }
+
+            if let domain, normalizedDomain(candidate.domain) == domain {
+                continue
+            }
+
+            return candidateID
         }
 
         return nil
     }
 
-    private func bestPreviewCandidateID(near candidateID: UUID) -> UUID? {
-        guard let candidate = candidate(for: candidateID) else { return nil }
-        return bestPreviewCandidateID(forNormalizedDomain: normalizedDomain(candidate.domain))
-    }
-
-    private func bestPreviewCandidateID(forNormalizedDomain domain: String) -> UUID? {
-        spotlightOrder
-            .compactMap { candidate(for: $0) }
-            .filter { normalizedDomain($0.domain) == domain }
-            .max { previewScore($0) < previewScore($1) }?
-            .id
-    }
-
-    private func previewScore(_ candidate: PurchaseCandidate) -> Double {
-        var score = CandidateDedupe.score(candidate)
-        if candidate.imageURL != nil { score += 1.0 }
-        if candidate.productURL != nil { score += 0.05 }
-        if candidate.price != nil { score += 0.05 }
-        return score
-    }
-
-    private func rememberDisplayedDomain(for candidateID: UUID) {
-        guard let candidate = candidate(for: candidateID) else { return }
-        shownDomainsInRound.insert(normalizedDomain(candidate.domain))
+    private func rememberDisplayedCandidate(_ candidateID: UUID) {
+        guard let candidate = candidate(for: candidateID),
+              candidate.imageURL != nil else { return }
+        displayedCandidateIDs.insert(candidateID)
+        lastDisplayedDomain = normalizedDomain(candidate.domain)
     }
 
     private func candidate(for id: UUID) -> PurchaseCandidate? {
