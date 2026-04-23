@@ -162,6 +162,7 @@
 - Tagged favicon fallback images separately and render them as small icons inside the thumbnail frame instead of scaling them like product photos.
 - Randomized scanner scheduling: startup now scans a shuffled mix of high-signal and extra hard-coded domains, then runs shuffled full-corpus rounds with a recent-domain window to avoid repeating the same domains immediately.
 - Changed the scanner-tab offer spotlight to rotate through image-backed candidates instead of one best card per domain, prefer not-yet-shown offers, and avoid the same domain back-to-back when other visual offers are available.
+- Fixed the `/bot-buyer` saved-card return path so desktop-originated card setup preserves `desktop_card_return=1` through Stripe and opens the DialtoneApp Desktop card-saved callback only after the card save completes.
 
 ### Still pending for public v0.0.1
 
