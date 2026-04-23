@@ -1,4 +1,4 @@
-[![Watch the DialtoneApp Desktop demo](demo-thumbnail.jpg)](https://github.com/DialtoneApp/macos-app/raw/main/demo.mp4)
+https://raw.githubusercontent.com/DialtoneApp/macos-app/refs/heads/main/demo.mp4
 
 # DialtoneApp Desktop
 
