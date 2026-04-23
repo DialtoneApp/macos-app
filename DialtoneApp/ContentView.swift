@@ -143,17 +143,28 @@ final class BotShoppingModel: ObservableObject {
     }
 
     func handleIncomingURL(_ url: URL) async {
+        let isBotBuyerCardCallback = Self.isBotBuyerCardSavedCallback(url)
         let handled = await purchaseCoordinator.handleAuthCallback(url)
         if handled {
-            status = "Processed DialtoneApp login callback"
             purchaseReadiness = .signedInCheckingCard
             purchaseReadiness = await purchaseCoordinator.purchaseReadiness()
+            if isBotBuyerCardCallback {
+                status = purchaseReadiness == .ready ? "Ready to buy" : "Processed bot-buyer card callback"
+            } else {
+                status = "Processed DialtoneApp login callback"
+            }
         } else {
             logs.append(.agent, level: .warning, "Ignored unsupported URL callback", metadata: [
                 "scheme": url.scheme ?? "none",
                 "host": url.host ?? "none"
             ])
         }
+    }
+
+    private static func isBotBuyerCardSavedCallback(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "dialtoneapp-desktop"
+            && url.host?.lowercased() == "bot-buyer"
+            && url.path.lowercased() == "/card-saved"
     }
 
     private func refreshPurchaseReadiness() {

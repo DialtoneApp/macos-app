@@ -154,6 +154,11 @@ final class PurchaseCoordinator {
     }
 
     func handleAuthCallback(_ url: URL) async -> Bool {
+        if isDesktopBotBuyerCardSavedCallback(url) {
+            logStore.append(.purchases, level: .success, "Desktop bot-buyer card callback received")
+            return true
+        }
+
         guard isDesktopAuthCallback(url) else {
             return false
         }
@@ -225,12 +230,21 @@ final class PurchaseCoordinator {
     }
 
     private func openBotBuyerAndReturnURL() -> URL {
-        let botBuyerURL = environment.frontendPath("bot-buyer")
+        let botBuyerURL = desktopBotBuyerURL()
         NSWorkspace.shared.open(botBuyerURL)
         logStore.append(.purchases, "Bot-buyer page opened", metadata: [
             "url": botBuyerURL.absoluteString
         ])
         return botBuyerURL
+    }
+
+    private func desktopBotBuyerURL() -> URL {
+        var components = URLComponents(url: environment.frontendPath("bot-buyer"), resolvingAgainstBaseURL: false)
+        var queryItems = components?.queryItems ?? []
+        queryItems.removeAll { $0.name == "desktop_card_return" }
+        queryItems.append(URLQueryItem(name: "desktop_card_return", value: "1"))
+        components?.queryItems = queryItems
+        return components?.url ?? environment.frontendPath("bot-buyer")
     }
 
     private func createDesktopLoginRequest() async throws -> DesktopLoginRequest {
@@ -540,6 +554,12 @@ final class PurchaseCoordinator {
         url.scheme?.lowercased() == "dialtoneapp-desktop"
             && url.host?.lowercased() == "auth"
             && url.path.lowercased() == "/callback"
+    }
+
+    private func isDesktopBotBuyerCardSavedCallback(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "dialtoneapp-desktop"
+            && url.host?.lowercased() == "bot-buyer"
+            && url.path.lowercased() == "/card-saved"
     }
 
     private func clearPendingDesktopLogin() {
