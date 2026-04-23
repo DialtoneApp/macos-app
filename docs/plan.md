@@ -157,6 +157,7 @@
 - Fixed candidate dedupe so preferred purchase/action cards inherit supplemental image, product URL, price, description, and API-call fields from duplicate lower-scored cards instead of losing available product photos.
 - Updated the scanner-tab offer spotlight so each domain turn prefers the best visual candidate from that domain, making image-bearing offers show in the first-tab preview when available.
 - Changed candidate card images to render as contained thumbnails instead of cropped banners, preserving the full product image aspect ratio.
+- Gave the scanner-tab offer spotlight a dedicated horizontal layout with the thumbnail on the left and offer details/actions on the right, while keeping the Found Items grid card layout unchanged.
 
 ### Still pending for public v0.0.1
 

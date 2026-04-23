@@ -686,7 +686,7 @@ struct RotatingOfferSpotlight: View {
             if model.candidates.isEmpty {
                 EmptyScannerState()
             } else if let candidate = currentCandidate {
-                CandidateCard(candidate: candidate)
+                SpotlightCandidateCard(candidate: candidate)
                     .id(candidate.id)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.2), value: candidate.id)
@@ -838,13 +838,14 @@ struct RotatingOfferSpotlight: View {
     }
 }
 
-struct CandidateCard: View {
-    @EnvironmentObject private var model: BotShoppingModel
-    let candidate: PurchaseCandidate
+struct CandidateThumbnail: View {
+    let imageURL: URL?
+    var height: CGFloat = 140
+    var width: CGFloat?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let imageURL = candidate.imageURL {
+        Group {
+            if let imageURL {
                 AsyncImage(url: imageURL) { phase in
                     switch phase {
                     case .success(let image):
@@ -859,10 +860,167 @@ struct CandidateCard: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .frame(height: 140)
-                .frame(maxWidth: .infinity)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                Image(systemName: "photo")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: width)
+        .frame(height: height)
+        .frame(maxWidth: width == nil ? .infinity : nil)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct CandidateActionRow: View {
+    @EnvironmentObject private var model: BotShoppingModel
+    let candidate: PurchaseCandidate
+
+    var body: some View {
+        HStack {
+            Button {
+                model.dismiss(candidate)
+            } label: {
+                Label("No", systemImage: "xmark")
+            }
+            .disabled(candidate.decision != .pending)
+
+            Button {
+                model.approve(candidate)
+            } label: {
+                Label(approveButtonTitle, systemImage: isPurchasing ? "hourglass" : "checkmark")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canApprove)
+
+            Spacer()
+
+            Button {
+                model.openSource(for: candidate)
+            } label: {
+                Label("Open source", systemImage: "safari")
+            }
+        }
+    }
+
+    private var isPurchasing: Bool {
+        model.isPurchasing(candidate)
+    }
+
+    private var canApprove: Bool {
+        guard !isPurchasing, candidate.decision != .dismissed else { return false }
+
+        guard let state = candidate.result?.state else { return true }
+
+        switch state {
+        case .purchased, .needsBrowserCheckout, .unsupportedMerchant:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var approveButtonTitle: String {
+        if isPurchasing {
+            return "Working"
+        }
+
+        guard let state = candidate.result?.state else {
+            return "Yes, buy"
+        }
+
+        switch state {
+        case .needsLogin:
+            return "Continue"
+        case .needsBotBuyerCard:
+            return "Check again"
+        case .failed:
+            return "Retry buy"
+        default:
+            return "Approved"
+        }
+    }
+}
+
+struct SpotlightCandidateCard: View {
+    let candidate: PurchaseCandidate
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            CandidateThumbnail(imageURL: candidate.imageURL, height: 180, width: 220)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(candidate.title)
+                            .font(.title3.weight(.semibold))
+                            .lineLimit(2)
+                        Text(candidate.merchantName)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text(candidate.sourceKind.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.teal)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.teal.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+
+                if let description = candidate.description, !description.isEmpty {
+                    Text(description)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(candidate.price?.displayValue ?? "Price unavailable")
+                            .font(.title3.weight(.semibold))
+                        Spacer()
+                        Text("\(Int(candidate.confidence * 100))% confidence")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Label(candidate.purchaseStrategy.label, systemImage: "creditcard")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text(candidate.sourceURL.absoluteString)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                if let result = candidate.result {
+                    ResultPill(result: result)
+                }
+
+                CandidateActionRow(candidate: candidate)
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct CandidateCard: View {
+    let candidate: PurchaseCandidate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let imageURL = candidate.imageURL {
+                CandidateThumbnail(imageURL: imageURL)
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -917,72 +1075,11 @@ struct CandidateCard: View {
                 ResultPill(result: result)
             }
 
-            HStack {
-                Button {
-                    model.dismiss(candidate)
-                } label: {
-                    Label("No", systemImage: "xmark")
-                }
-                .disabled(candidate.decision != .pending)
-
-                Button {
-                    model.approve(candidate)
-                } label: {
-                    Label(approveButtonTitle, systemImage: isPurchasing ? "hourglass" : "checkmark")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canApprove)
-
-                Spacer()
-
-                Button {
-                    model.openSource(for: candidate)
-                } label: {
-                    Label("Open source", systemImage: "safari")
-                }
-            }
+            CandidateActionRow(candidate: candidate)
         }
         .padding(16)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private var isPurchasing: Bool {
-        model.isPurchasing(candidate)
-    }
-
-    private var canApprove: Bool {
-        guard !isPurchasing, candidate.decision != .dismissed else { return false }
-
-        guard let state = candidate.result?.state else { return true }
-
-        switch state {
-        case .purchased, .needsBrowserCheckout, .unsupportedMerchant:
-            return false
-        default:
-            return true
-        }
-    }
-
-    private var approveButtonTitle: String {
-        if isPurchasing {
-            return "Working"
-        }
-
-        guard let state = candidate.result?.state else {
-            return "Yes, buy"
-        }
-
-        switch state {
-        case .needsLogin:
-            return "Continue"
-        case .needsBotBuyerCard:
-            return "Check again"
-        case .failed:
-            return "Retry buy"
-        default:
-            return "Approved"
-        }
     }
 }
 
