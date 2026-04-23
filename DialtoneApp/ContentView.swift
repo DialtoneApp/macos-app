@@ -152,7 +152,30 @@ final class BotShoppingModel: ObservableObject {
     private func ingest(_ newCandidates: [PurchaseCandidate]) {
         var inserted = 0
 
-        for candidate in newCandidates where !knownCandidateFingerprints.contains(candidate.fingerprint) {
+        for candidate in CandidateDedupe.dedupe(newCandidates) {
+            let semanticKey = CandidateDedupe.semanticKey(for: candidate)
+
+            if let existingIndex = candidates.firstIndex(where: { CandidateDedupe.semanticKey(for: $0) == semanticKey }) {
+                knownCandidateFingerprints.insert(candidate.fingerprint)
+
+                if candidates[existingIndex].decision == .pending,
+                   CandidateDedupe.isPreferred(candidate, over: candidates[existingIndex]) {
+                    let replacedCandidate = candidates[existingIndex]
+                    candidates[existingIndex] = candidate
+                    logs.append(.agent, "Candidate improved", metadata: [
+                        "candidate_id": candidate.id.uuidString,
+                        "replaced_candidate_id": replacedCandidate.id.uuidString,
+                        "domain": candidate.domain,
+                        "title": candidate.title,
+                        "source": candidate.sourceKind.rawValue,
+                        "price": candidate.price?.displayValue ?? "none"
+                    ])
+                }
+
+                continue
+            }
+
+            guard !knownCandidateFingerprints.contains(candidate.fingerprint) else { continue }
             knownCandidateFingerprints.insert(candidate.fingerprint)
             candidates.insert(candidate, at: 0)
             inserted += 1

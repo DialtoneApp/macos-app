@@ -1306,43 +1306,7 @@ final class DomainScanner {
     }
 
     private func dedupeCandidates(_ candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
-        var groups: [String: [PurchaseCandidate]] = [:]
-        var groupOrder: [String] = []
-
-        for candidate in candidates {
-            let key = candidateDedupeKey(for: candidate)
-            if groups[key] == nil {
-                groups[key] = []
-                groupOrder.append(key)
-            }
-            groups[key]?.append(candidate)
-        }
-
-        return groupOrder.flatMap { key -> [PurchaseCandidate] in
-            guard let group = groups[key] else { return [] }
-            let priced = group.filter { $0.price != nil }
-
-            if priced.isEmpty {
-                return [bestCandidate(in: group)]
-            }
-
-            var priceKeys: [String] = []
-            var bestByPrice: [String: PurchaseCandidate] = [:]
-
-            for candidate in priced {
-                let priceKey = candidate.price.map { "\($0.currency):\($0.amount)" } ?? "no-price"
-                if let existing = bestByPrice[priceKey] {
-                    if candidateScore(candidate) > candidateScore(existing) {
-                        bestByPrice[priceKey] = candidate
-                    }
-                } else {
-                    priceKeys.append(priceKey)
-                    bestByPrice[priceKey] = candidate
-                }
-            }
-
-            return priceKeys.compactMap { bestByPrice[$0] }
-        }
+        CandidateDedupe.dedupe(candidates)
     }
 
     private func bestCandidate(in candidates: [PurchaseCandidate]) -> PurchaseCandidate {

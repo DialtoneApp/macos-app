@@ -413,6 +413,171 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
     }
 }
 
+enum CandidateDedupe {
+    static func dedupe(_ candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
+        var groups: [String: [PurchaseCandidate]] = [:]
+        var groupOrder: [String] = []
+
+        for candidate in candidates {
+            let key = semanticKey(for: candidate)
+            if groups[key] == nil {
+                groups[key] = []
+                groupOrder.append(key)
+            }
+            groups[key]?.append(candidate)
+        }
+
+        return groupOrder.flatMap { key -> [PurchaseCandidate] in
+            guard let group = groups[key] else { return [] }
+            if isCommercialOfferKey(key) {
+                return [bestCandidate(in: group)]
+            }
+
+            let priced = group.filter { $0.price != nil }
+
+            if priced.isEmpty {
+                return [bestCandidate(in: group)]
+            }
+
+            var priceKeys: [String] = []
+            var bestByPrice: [String: PurchaseCandidate] = [:]
+
+            for candidate in priced {
+                let priceKey = candidate.price.map { "\($0.currency):\($0.amount)" } ?? "no-price"
+                if let existing = bestByPrice[priceKey] {
+                    if isPreferred(candidate, over: existing) {
+                        bestByPrice[priceKey] = candidate
+                    }
+                } else {
+                    priceKeys.append(priceKey)
+                    bestByPrice[priceKey] = candidate
+                }
+            }
+
+            return priceKeys.compactMap { bestByPrice[$0] }
+        }
+    }
+
+    static func semanticKey(for candidate: PurchaseCandidate) -> String {
+        if let offerKey = commercialOfferKey(for: candidate) {
+            return offerKey
+        }
+
+        let title = normalizeForDedupe(candidate.title)
+        return "\(candidate.domain.lowercased())|title|\(title)"
+    }
+
+    static func isPreferred(_ candidate: PurchaseCandidate, over existing: PurchaseCandidate) -> Bool {
+        score(candidate) > score(existing)
+    }
+
+    static func score(_ candidate: PurchaseCandidate) -> Double {
+        var score = candidate.confidence
+        if candidate.price != nil { score += 0.30 }
+        if candidate.productURL != nil { score += 0.15 }
+        if candidate.imageURL != nil { score += 0.10 }
+        if candidate.discoveredApiCall != nil { score += 0.04 }
+        if candidate.description?.isEmpty == false { score += 0.03 }
+        score += purchaseStrategyPriority(candidate.purchaseStrategy)
+        score += sourcePriority(candidate.sourceKind)
+        return score
+    }
+
+    private static func bestCandidate(in candidates: [PurchaseCandidate]) -> PurchaseCandidate {
+        candidates.max { score($0) < score($1) } ?? candidates[0]
+    }
+
+    private static func commercialOfferKey(for candidate: PurchaseCandidate) -> String? {
+        guard shouldClusterCommercialOffer(candidate) else { return nil }
+        return "\(candidate.domain.lowercased())|commercial-offer|site"
+    }
+
+    private static func isCommercialOfferKey(_ key: String) -> Bool {
+        key.contains("|commercial-offer|")
+    }
+
+    private static func shouldClusterCommercialOffer(_ candidate: PurchaseCandidate) -> Bool {
+        switch candidate.sourceKind {
+        case .openAPI, .ucp, .commerceManifest, .agentCard, .siteAI:
+            return true
+        case .jsonLD, .htmlFallback:
+            return candidate.price != nil && isBroadCommercialPage(candidate.productURL ?? candidate.sourceURL)
+        case .productsJSON, .woocommerce, .x402:
+            return false
+        }
+    }
+
+    private static func isBroadCommercialPage(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        let components = url.path
+            .split(separator: "/")
+            .map { String($0).lowercased() }
+
+        guard components.count <= 1 else { return false }
+        guard let slug = components.first else { return true }
+
+        let commerceSlugs = [
+            "bot-buyer",
+            "buy",
+            "cart",
+            "checkout",
+            "membership",
+            "plan",
+            "plans",
+            "pricing",
+            "product",
+            "products",
+            "subscribe",
+            "subscription"
+        ]
+
+        return commerceSlugs.contains(slug)
+    }
+
+    private static func normalizeForDedupe(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"[\p{P}\p{S}]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func purchaseStrategyPriority(_ strategy: PurchaseStrategy) -> Double {
+        switch strategy {
+        case .dialtoneappNetwork:
+            return 0.35
+        case .x402:
+            return 0.28
+        case .apiAction:
+            return 0.20
+        case .browserCheckout:
+            return 0
+        case .unsupported:
+            return -0.25
+        }
+    }
+
+    private static func sourcePriority(_ kind: CandidateSourceKind) -> Double {
+        switch kind {
+        case .openAPI:
+            return 0.09
+        case .commerceManifest, .x402:
+            return 0.08
+        case .ucp:
+            return 0.07
+        case .jsonLD:
+            return 0.06
+        case .productsJSON, .woocommerce:
+            return 0.05
+        case .agentCard, .siteAI:
+            return 0.04
+        case .htmlFallback:
+            return 0.01
+        }
+    }
+}
+
 struct NetworkCallRecord: Identifiable, Codable, Hashable {
     var id: String
     var timestamp: Date
