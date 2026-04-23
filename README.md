@@ -1,4 +1,4 @@
-[![Watch the video](https://img.youtube.com/vi/op1h_ghJvgU/0.jpg)](https://www.youtube.com/watch?v=op1h_ghJvgU)
+<video src="demo.mp4" controls width="600"></video>
 
 # DialtoneApp Desktop
 
