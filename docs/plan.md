@@ -8,8 +8,8 @@
 - Debug build version is set to `0.0.1`.
 - The macOS app runs as a menu bar app and can keep running after the main window closes.
 - Menu bar label now supports the favicon-derived icon with a red dot when `unseenCandidateCount > 0`.
-- Menu bar menu now shows scanner state, unseen/pending counts, top candidates, `Open DialtoneApp Desktop`, `View Log`, `Reveal Log Files`, and `Pause Bot` / `Resume Bot`.
-- `View Log` opens a dedicated log window.
+- Menu bar menu now shows scanner state, unseen/pending counts, top candidates, `Open DialtoneApp Desktop`, `Reveal Log Files`, `Log Out`, and `Pause Bot` / `Resume Bot`.
+- Removed the in-app `View Log` window; local file logs are the supported debugging surface.
 - Local logs are written under:
   - `~/Library/Logs/DialtoneApp Desktop/agent.log`
   - `~/Library/Logs/DialtoneApp Desktop/network.log`
@@ -149,7 +149,8 @@
 - Reused the same semantic commercial-offer dedupe at UI ingest time so broad product pages, JSON-LD, OpenAPI, UCP, commerce manifests, agent cards, and siteai.json no longer stack duplicate cards for one offer.
 - Made the `Needs bot-buyer card` account state clickable in the macOS overview and status strip so it opens the configured frontend `/bot-buyer` page.
 - Made the `Not signed in` account state clickable in the macOS overview and status strip so it starts the desktop login flow, and added a pointing-hand cursor for clickable account states.
-- Changed the macOS main UI and log UI to single-instance windows and focus the existing DialtoneApp Desktop window when a desktop auth callback arrives, instead of stacking duplicate main windows.
+- Changed the macOS main UI to a single-instance window and focus the existing DialtoneApp Desktop window when a desktop auth callback arrives, instead of stacking duplicate main windows.
+- Removed the `View Log` menu item and log window feature, and replaced it with `Log Out`, which clears DialtoneApp Desktop app support files, local log files, app defaults, and the Keychain desktop session.
 
 ### Still pending for public v0.0.1
 
@@ -185,7 +186,7 @@ This release does not need broad personalization, category search, ranking intel
 - Native app name and UI copy: `DialtoneApp Desktop`.
 - Menu bar app that can keep running after the main window closes.
 - Menu bar red-dot state when there are unseen product/action candidates.
-- Menu option: `View Log`.
+- Menu option: `Log Out`.
 - File logs written locally.
 - Hard-coded scan corpus from the April 2026 AI bot buying report.
 - Background scanner with conservative scheduling and per-domain backoff.
@@ -504,21 +505,14 @@ Never log:
 - Set-Cookie values.
 - Authorization headers.
 
-### View Log menu option
+### Log files and logout
 
 Add a menu option under the menu bar extra:
 
-- `View Log` opens a `LogWindow`.
 - `Reveal Log Files` opens the log directory in Finder.
+- `Log Out` clears app support files, local log files, app defaults, and the Keychain desktop session.
 
-The log window should have:
-
-- Tabs: `Agent`, `Network`, `Purchases`.
-- Search field.
-- Domain filter.
-- Status filter: all, success, warning, error.
-- Clear button for local logs.
-- Copy selected lines.
+Do not ship an in-app log viewer for v0.0.1.
 
 ## Menu bar red dot
 
@@ -534,7 +528,8 @@ The menu should show:
 - Unseen candidate count.
 - Top 3 candidates.
 - `Open DialtoneApp Desktop`.
-- `View Log`.
+- `Reveal Log Files`.
+- `Log Out`.
 - `Pause Bot` or `Resume Bot`.
 
 ## Candidate UI
@@ -694,13 +689,13 @@ Tables:
 - Add hardened runtime and notarization checklist.
 - Add app storage directory helpers.
 - Add file logger with rotation.
-- Add `View Log` menu item and log window.
+- Add `Log Out` menu item.
 
 Done when:
 
 - App launches.
 - Menu bar icon appears.
-- `View Log` opens.
+- `Log Out` clears local app state and session state.
 - Logs write to files.
 
 ### Phase 2: domain corpus and scanner
@@ -792,7 +787,7 @@ Done when:
 - App can run from the menu bar.
 - Hard-coded report domains are bundled.
 - Scanner can run for at least 30 minutes without crashing.
-- `View Log` works.
+- `Log Out` works.
 - Log files are written to `~/Library/Logs/DialtoneApp Desktop/`.
 - Every network call has a log entry.
 - At least 10 domains produce successful discovery records or explainable failures.

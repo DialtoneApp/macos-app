@@ -42,6 +42,11 @@ final class PurchaseCoordinator {
         await openDesktopLogin()
     }
 
+    func logOut() {
+        clearPendingDesktopLogin()
+        deleteDesktopSessionToken()
+    }
+
     func purchaseReadiness() async -> DesktopPurchaseReadiness {
         guard let token = loadDesktopSessionToken(), !token.isEmpty else {
             return .signedOut

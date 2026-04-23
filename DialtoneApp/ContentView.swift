@@ -142,6 +142,19 @@ final class BotShoppingModel: ObservableObject {
         }
     }
 
+    func logOut() {
+        purchaseCoordinator.logOut()
+        resetAppDefaults()
+        candidates = []
+        reports = []
+        unseenCandidateCount = 0
+        purchasingCandidateIDs = []
+        knownCandidateFingerprints = []
+        purchaseReadiness = .signedOut
+        status = "Signed out"
+        logs.resetLocalFiles()
+    }
+
     func handleIncomingURL(_ url: URL) async {
         let isBotBuyerCardCallback = Self.isBotBuyerCardSavedCallback(url)
         let handled = await purchaseCoordinator.handleAuthCallback(url)
@@ -172,6 +185,12 @@ final class BotShoppingModel: ObservableObject {
         Task {
             purchaseReadiness = await purchaseCoordinator.purchaseReadiness()
         }
+    }
+
+    private func resetAppDefaults() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
+        UserDefaults.standard.synchronize()
     }
 
     private func ingest(_ newCandidates: [PurchaseCandidate]) {
@@ -881,16 +900,15 @@ struct MenuBarView: View {
             }
 
             Button {
-                openWindow(id: "logs")
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            } label: {
-                Label("View Log", systemImage: "doc.text.magnifyingglass")
-            }
-
-            Button {
                 model.logs.revealLogFiles()
             } label: {
                 Label("Reveal Log Files", systemImage: "folder")
+            }
+
+            Button {
+                model.logOut()
+            } label: {
+                Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
             }
 
             Divider()

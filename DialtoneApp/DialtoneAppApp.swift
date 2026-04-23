@@ -67,11 +67,6 @@ struct DialtoneAppApp: App {
         }
         .windowResizability(.contentMinSize)
 
-        Window("Logs", id: "logs") {
-            LogWindow()
-                .environmentObject(model)
-        }
-        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open DialtoneApp Desktop") {
@@ -80,11 +75,9 @@ struct DialtoneAppApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command])
 
-                Button("View Log") {
-                    openWindow(id: "logs")
-                    NSApplication.shared.activate(ignoringOtherApps: true)
+                Button("Log Out") {
+                    model.logOut()
                 }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
 

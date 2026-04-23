@@ -90,6 +90,18 @@ final class LocalLogStore: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([logDirectory])
     }
 
+    func resetLocalFiles(fileManager: FileManager = .default) {
+        try? fileManager.removeItem(at: appSupportDirectory)
+        try? fileManager.removeItem(at: logDirectory)
+
+        createDirectories(fileManager: fileManager)
+        ensureLogFiles(fileManager: fileManager)
+
+        agentLines = []
+        networkLines = []
+        purchaseLines = []
+    }
+
     func writeDomainState(domains: [String]) {
         let url = appSupportDirectory.appendingPathComponent("domains.json")
         let states = domains.map {
