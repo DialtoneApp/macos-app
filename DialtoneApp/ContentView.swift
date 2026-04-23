@@ -179,7 +179,7 @@ final class BotShoppingModel: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject private var model: BotShoppingModel
-    @State private var selectedSection: AppSection? = .discover
+    @State private var selectedSection: AppSection? = .scanner
 
     var body: some View {
         NavigationSplitView {
@@ -188,11 +188,10 @@ struct ContentView: View {
         } detail: {
             ScrollView {
                 VStack(spacing: 18) {
-                    HeroPanel()
-                    StatusStrip()
-
-                    switch selectedSection ?? .discover {
-                    case .discover:
+                    switch selectedSection ?? .scanner {
+                    case .scanner:
+                        ScannerOverviewScreen()
+                    case .foundItems:
                         DiscoveryScreen()
                     case .activity:
                         ActivityScreen()
@@ -208,14 +207,16 @@ struct ContentView: View {
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case discover = "Found Items"
+    case scanner = "DialtoneApp Scanner"
+    case foundItems = "Found Items"
     case activity = "Activity"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .discover: return "sparkle.magnifyingglass"
+        case .scanner: return "antenna.radiowaves.left.and.right"
+        case .foundItems: return "sparkle.magnifyingglass"
         case .activity: return "clock.arrow.circlepath"
         }
     }
@@ -241,6 +242,15 @@ struct SidebarView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
+        }
+    }
+}
+
+struct ScannerOverviewScreen: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HeroPanel()
+            StatusStrip()
         }
     }
 }
