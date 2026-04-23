@@ -32,6 +32,10 @@ final class DomainScanner {
     private let onCandidates: ([PurchaseCandidate]) -> Void
     private let onReport: (DomainDiscoveryReport) -> Void
 
+    private let bootstrapExtraDomainCount = 12
+    private let recentDomainWindow = 20
+    private let randomRoundDelayRange = 25...70
+
     private var scanTask: Task<Void, Never>?
     private var paused = false
 
@@ -72,27 +76,74 @@ final class DomainScanner {
     private func runScanner() async {
         logStore.append(.agent, level: .success, "Scanner started", metadata: ["domains": "\(DomainCorpus.all.count)"])
         logStore.writeDomainState(domains: DomainCorpus.all)
-        onStatus("Scanning high-signal domains")
+        onStatus("Scanning randomized domain mix")
 
-        logStore.append(.agent, "Batch started", metadata: ["batch": "high_signal", "domains": "\(DomainCorpus.highSignal.count)"])
-        for domain in DomainCorpus.highSignal {
+        var recentDomains: [String] = []
+        let bootstrapDomains = randomizedBootstrapDomains()
+
+        logStore.append(.agent, "Batch started", metadata: [
+            "batch": "randomized_bootstrap",
+            "domains": "\(bootstrapDomains.count)"
+        ])
+        for domain in bootstrapDomains {
+            guard !Task.isCancelled else { return }
             await waitWhilePaused()
             await scanDomain(domain)
+            rememberRecentDomain(domain, in: &recentDomains)
         }
-        logStore.append(.agent, level: .success, "Batch finished", metadata: ["batch": "high_signal"])
+        logStore.append(.agent, level: .success, "Batch finished", metadata: ["batch": "randomized_bootstrap"])
 
-        let highSignalSet = Set(DomainCorpus.highSignal)
-        let remainingDomains = DomainCorpus.all.filter { !highSignalSet.contains($0) }
-
+        var round = 1
         while !Task.isCancelled {
-            for domain in remainingDomains {
+            let roundDomains = randomizedFullCorpusRound(recentDomains: recentDomains)
+            logStore.append(.agent, "Batch started", metadata: [
+                "batch": "randomized_full_corpus",
+                "round": "\(round)",
+                "domains": "\(roundDomains.count)"
+            ])
+
+            for domain in roundDomains {
+                guard !Task.isCancelled else { return }
                 await waitWhilePaused()
-                let delaySeconds = UInt64(Int.random(in: 60...120))
-                onStatus("Next scan in \(delaySeconds)s: \(domain)")
+                let delaySeconds = UInt64(Int.random(in: randomRoundDelayRange))
+                onStatus("Next random scan in \(delaySeconds)s: \(domain)")
                 try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
                 await waitWhilePaused()
                 await scanDomain(domain)
+                rememberRecentDomain(domain, in: &recentDomains)
             }
+
+            logStore.append(.agent, level: .success, "Batch finished", metadata: [
+                "batch": "randomized_full_corpus",
+                "round": "\(round)"
+            ])
+            round += 1
+        }
+    }
+
+    private func randomizedBootstrapDomains() -> [String] {
+        let highSignal = DomainCorpus.highSignal.shuffled()
+        let highSignalSet = Set(highSignal)
+        let extraDomains = Array(DomainCorpus.all
+            .filter { !highSignalSet.contains($0) }
+            .shuffled()
+            .prefix(bootstrapExtraDomainCount))
+
+        return (highSignal + extraDomains).shuffled()
+    }
+
+    private func randomizedFullCorpusRound(recentDomains: [String]) -> [String] {
+        let recentSet = Set(recentDomains)
+        let shuffled = DomainCorpus.all.shuffled()
+        return shuffled.filter { !recentSet.contains($0) } + shuffled.filter { recentSet.contains($0) }
+    }
+
+    private func rememberRecentDomain(_ domain: String, in recentDomains: inout [String]) {
+        recentDomains.removeAll { $0 == domain }
+        recentDomains.append(domain)
+
+        if recentDomains.count > recentDomainWindow {
+            recentDomains.removeFirst(recentDomains.count - recentDomainWindow)
         }
     }
 

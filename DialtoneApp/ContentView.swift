@@ -654,10 +654,10 @@ struct EmptyScannerState: View {
     var body: some View {
         Card(title: "Scanner warming up", icon: "antenna.radiowaves.left.and.right") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("DialtoneApp Desktop is scanning the first high-signal domains now.")
+                Text("DialtoneApp Desktop is scanning a randomized mix of hard-coded domains now.")
                     .font(.headline)
 
-                Text(DomainCorpus.highSignal.joined(separator: "\n"))
+                Text(DomainCorpus.all.prefix(20).joined(separator: "\n") + "\n...")
                     .font(.system(.callout, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
