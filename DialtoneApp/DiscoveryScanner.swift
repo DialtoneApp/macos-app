@@ -18,7 +18,12 @@ final class DomainScanner {
         var discoveredURLs: [URL] = []
         var apiCalls: [DiscoveredApiCall] = []
         var candidates: [PurchaseCandidate] = []
-        var domainImageFallbackURL: URL?
+        var domainImageFallback: DomainImageFallback?
+    }
+
+    private struct DomainImageFallback {
+        var url: URL
+        var kind: PurchaseCandidate.ImageKind
     }
 
     private let logStore: LocalLogStore
@@ -99,7 +104,7 @@ final class DomainScanner {
         var candidates: [PurchaseCandidate] = []
         var discoveredURLs = OrderedURLSet()
         var probedURLs = Set<URL>()
-        var domainImageFallbackURL: URL?
+        var domainImageFallback: DomainImageFallback?
 
         onStatus("Scanning \(domain)")
         logStore.append(.agent, "Domain scan started", metadata: ["domain": domain])
@@ -114,8 +119,8 @@ final class DomainScanner {
             discoveredURLs.append(contentsOf: parsed.discoveredURLs)
             discoveredApiCalls.append(contentsOf: parsed.apiCalls)
             candidates.append(contentsOf: parsed.candidates)
-            if probe.source == .homepage, let fallbackURL = parsed.domainImageFallbackURL {
-                domainImageFallbackURL = fallbackURL
+            if probe.source == .homepage, let fallback = parsed.domainImageFallback {
+                domainImageFallback = fallback
             }
             logStore.append(.agent, "Probe parsed", metadata: [
                 "domain": domain,
@@ -146,7 +151,7 @@ final class DomainScanner {
             ])
         }
 
-        let enrichedCandidates = applyDomainImageFallback(domainImageFallbackURL, to: candidates)
+        let enrichedCandidates = applyDomainImageFallback(domainImageFallback, to: candidates)
         let dedupedCandidates = dedupeCandidates(enrichedCandidates)
         let report = DomainDiscoveryReport(
             domain: domain,
@@ -312,7 +317,7 @@ final class DomainScanner {
             result.candidates.append(contentsOf: parseJSONLDProducts(html: text, domain: domain, sourceURL: sourceURL))
             result.candidates.append(contentsOf: parseOpenGraphProduct(html: text, domain: domain, sourceURL: sourceURL))
             if source == .homepage {
-                result.domainImageFallbackURL = domainImageFallbackURL(in: text, sourceURL: sourceURL)
+                result.domainImageFallback = domainImageFallback(in: text, sourceURL: sourceURL)
             }
         }
 
@@ -686,24 +691,25 @@ final class DomainScanner {
         ]
     }
 
-    private func applyDomainImageFallback(_ fallbackURL: URL?, to candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
-        guard let fallbackURL else { return candidates }
+    private func applyDomainImageFallback(_ fallback: DomainImageFallback?, to candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
+        guard let fallback else { return candidates }
 
         return candidates.map { candidate in
             guard candidate.imageURL == nil else { return candidate }
             var enriched = candidate
-            enriched.imageURL = fallbackURL
+            enriched.imageURL = fallback.url
+            enriched.imageKind = fallback.kind
             return enriched
         }
     }
 
-    private func domainImageFallbackURL(in html: String, sourceURL: URL) -> URL? {
+    private func domainImageFallback(in html: String, sourceURL: URL) -> DomainImageFallback? {
         if let openGraphImage = metaValue(in: html, keys: ["og:image", "og:image:secure_url", "twitter:image"]),
            let url = URL(string: openGraphImage, relativeTo: sourceURL)?.absoluteURL {
-            return url
+            return DomainImageFallback(url: url, kind: .domainOpenGraph)
         }
 
-        return faviconURL(in: html, sourceURL: sourceURL)
+        return faviconURL(in: html, sourceURL: sourceURL).map { DomainImageFallback(url: $0, kind: .favicon) }
     }
 
     private func faviconURL(in html: String, sourceURL: URL) -> URL? {

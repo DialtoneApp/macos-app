@@ -840,38 +840,51 @@ struct RotatingOfferSpotlight: View {
 
 struct CandidateThumbnail: View {
     let imageURL: URL?
+    var imageKind: PurchaseCandidate.ImageKind?
     var height: CGFloat = 140
     var width: CGFloat?
 
     var body: some View {
-        Group {
-            if let imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .padding(8)
-                    default:
-                        Image(systemName: "photo")
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            Color(nsColor: .controlBackgroundColor)
+
+            Group {
+                if let imageURL {
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .padding(imagePadding)
+                        default:
+                            Image(systemName: "photo")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
+                } else {
+                    Image(systemName: "photo")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            } else {
-                Image(systemName: "photo")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(width: imageContentSize?.width, height: imageContentSize?.height)
         }
         .frame(width: width)
         .frame(height: height)
         .frame(maxWidth: width == nil ? .infinity : nil)
-        .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var imageContentSize: CGSize? {
+        imageKind == .favicon ? CGSize(width: 56, height: 56) : nil
+    }
+
+    private var imagePadding: CGFloat {
+        imageKind == .favicon ? 0 : 8
     }
 }
 
@@ -950,7 +963,7 @@ struct SpotlightCandidateCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            CandidateThumbnail(imageURL: candidate.imageURL, height: 180, width: 220)
+            CandidateThumbnail(imageURL: candidate.imageURL, imageKind: candidate.imageKind, height: 180, width: 220)
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
@@ -1020,7 +1033,7 @@ struct CandidateCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let imageURL = candidate.imageURL {
-                CandidateThumbnail(imageURL: imageURL)
+                CandidateThumbnail(imageURL: imageURL, imageKind: candidate.imageKind)
             }
 
             HStack(alignment: .top, spacing: 12) {

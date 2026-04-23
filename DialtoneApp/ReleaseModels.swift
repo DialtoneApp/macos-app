@@ -245,6 +245,12 @@ enum DesktopPurchaseReadiness: String, Hashable {
 }
 
 struct PurchaseCandidate: Identifiable, Codable, Hashable {
+    enum ImageKind: String, Codable, Hashable {
+        case product
+        case domainOpenGraph
+        case favicon
+    }
+
     var id: UUID
     var domain: String
     var merchantName: String
@@ -252,6 +258,7 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
     var description: String?
     var price: Money?
     var imageURL: URL?
+    var imageKind: ImageKind?
     var productURL: URL?
     var sourceURL: URL
     var sourceKind: CandidateSourceKind
@@ -271,6 +278,7 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         description: String?,
         price: Money?,
         imageURL: URL?,
+        imageKind: ImageKind? = nil,
         productURL: URL?,
         sourceURL: URL,
         sourceKind: CandidateSourceKind,
@@ -290,6 +298,7 @@ struct PurchaseCandidate: Identifiable, Codable, Hashable {
         self.description = description
         self.price = price
         self.imageURL = imageURL
+        self.imageKind = imageKind ?? (imageURL == nil ? nil : .product)
         self.productURL = productURL
         self.sourceURL = sourceURL
         self.sourceKind = sourceKind
@@ -489,6 +498,7 @@ enum CandidateDedupe {
 
         if target.imageURL == nil, let imageURL = source.imageURL {
             target.imageURL = imageURL
+            target.imageKind = source.imageKind ?? .product
             changed = true
         }
 
