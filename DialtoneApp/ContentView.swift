@@ -128,6 +128,12 @@ final class BotShoppingModel: ObservableObject {
         NSWorkspace.shared.open(candidate.productURL ?? candidate.sourceURL)
     }
 
+    func openBotBuyer() {
+        guard purchaseReadiness == .signedInNeedsCard else { return }
+        purchaseCoordinator.openBotBuyer()
+        status = "Opening bot-buyer setup"
+    }
+
     func handleIncomingURL(_ url: URL) async {
         let handled = await purchaseCoordinator.handleAuthCallback(url)
         if handled {
@@ -327,7 +333,7 @@ struct HeroPanel: View {
                 MetricPill(icon: "sparkle.magnifyingglass", label: "Found", value: "\(model.candidates.count) items", tint: .blue)
                 MetricPill(icon: "circle.fill", label: "Unseen", value: "\(model.unseenCandidateCount)", tint: .red)
                 MetricPill(icon: "network", label: "Scanned", value: "\(model.scannedDomainCount) domains", tint: .orange)
-                MetricPill(icon: model.purchaseReadiness.systemImage, label: "Account", value: model.purchaseReadiness.label, tint: model.purchaseReadiness.tint)
+                AccountReadinessPill()
             }
         }
         .padding(24)
@@ -344,8 +350,7 @@ struct StatusStrip: View {
             Label(model.status, systemImage: model.botEnabled ? "antenna.radiowaves.left.and.right" : "pause.circle")
                 .font(.callout.weight(.medium))
             Spacer()
-            Label(model.purchaseReadiness.label, systemImage: model.purchaseReadiness.systemImage)
-                .foregroundStyle(model.purchaseReadiness.tint)
+            AccountReadinessStatus()
             Label("\(DomainCorpus.all.count) domains", systemImage: "list.bullet.rectangle")
             Label("\(model.pendingCandidates.count) pending", systemImage: "tray")
             Label("\(model.logs.networkLines.count) calls", systemImage: "network")
@@ -469,6 +474,54 @@ struct MetricPill: View {
         .padding(.vertical, 10)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct AccountReadinessPill: View {
+    @EnvironmentObject private var model: BotShoppingModel
+
+    var body: some View {
+        if model.purchaseReadiness == .signedInNeedsCard {
+            Button {
+                model.openBotBuyer()
+            } label: {
+                MetricPill(
+                    icon: model.purchaseReadiness.systemImage,
+                    label: "Account",
+                    value: model.purchaseReadiness.label,
+                    tint: model.purchaseReadiness.tint
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Open bot-buyer")
+        } else {
+            MetricPill(
+                icon: model.purchaseReadiness.systemImage,
+                label: "Account",
+                value: model.purchaseReadiness.label,
+                tint: model.purchaseReadiness.tint
+            )
+        }
+    }
+}
+
+struct AccountReadinessStatus: View {
+    @EnvironmentObject private var model: BotShoppingModel
+
+    var body: some View {
+        if model.purchaseReadiness == .signedInNeedsCard {
+            Button {
+                model.openBotBuyer()
+            } label: {
+                Label(model.purchaseReadiness.label, systemImage: model.purchaseReadiness.systemImage)
+            }
+            .buttonStyle(.link)
+            .foregroundStyle(model.purchaseReadiness.tint)
+            .help("Open bot-buyer")
+        } else {
+            Label(model.purchaseReadiness.label, systemImage: model.purchaseReadiness.systemImage)
+                .foregroundStyle(model.purchaseReadiness.tint)
+        }
     }
 }
 

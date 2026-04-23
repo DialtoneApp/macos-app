@@ -34,6 +34,10 @@ final class PurchaseCoordinator {
         ])
     }
 
+    func openBotBuyer() {
+        _ = openBotBuyerAndReturnURL()
+    }
+
     func purchaseReadiness() async -> DesktopPurchaseReadiness {
         guard let token = loadDesktopSessionToken(), !token.isEmpty else {
             return .signedOut
@@ -92,8 +96,7 @@ final class PurchaseCoordinator {
             case .authorized(let hasCard) where hasCard:
                 break
             case .authorized:
-                let botBuyerURL = environment.frontendPath("bot-buyer")
-                NSWorkspace.shared.open(botBuyerURL)
+                let botBuyerURL = openBotBuyerAndReturnURL()
                 let result = PurchaseFlowResult(
                     state: .needsBotBuyerCard,
                     message: "Add a saved bot-buyer card before DialtoneApp Desktop can buy on your behalf.",
@@ -215,6 +218,15 @@ final class PurchaseCoordinator {
             ])
             return loginURL
         }
+    }
+
+    private func openBotBuyerAndReturnURL() -> URL {
+        let botBuyerURL = environment.frontendPath("bot-buyer")
+        NSWorkspace.shared.open(botBuyerURL)
+        logStore.append(.purchases, "Bot-buyer page opened", metadata: [
+            "url": botBuyerURL.absoluteString
+        ])
+        return botBuyerURL
     }
 
     private func createDesktopLoginRequest() async throws -> DesktopLoginRequest {

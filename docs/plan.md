@@ -147,6 +147,7 @@
 - Added generic machine-readable offer dedupe so OpenAPI, UCP, commerce manifest, agent-card, and siteai candidates for the same commercial offer collapse to the best card instead of showing duplicate confidence variants.
 - Split the macOS sidebar so `DialtoneApp Scanner` is the main overview tab and `Found Items` is a separate second tab that contains the candidate cards.
 - Reused the same semantic commercial-offer dedupe at UI ingest time so broad product pages, JSON-LD, OpenAPI, UCP, commerce manifests, agent cards, and siteai.json no longer stack duplicate cards for one offer.
+- Made the `Needs bot-buyer card` account state clickable in the macOS overview and status strip so it opens the configured frontend `/bot-buyer` page.
 
 ### Still pending for public v0.0.1
 
