@@ -1,4 +1,4 @@
-<video src="demo.mp4" controls width="600"></video>
+<video src="https://raw.githubusercontent.com/DialtoneApp/macos-app/refs/heads/main/demo.mp4" controls width="600"></video>
 
 # DialtoneApp Desktop
 
