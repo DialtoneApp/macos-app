@@ -18,6 +18,7 @@ final class DomainScanner {
         var discoveredURLs: [URL] = []
         var apiCalls: [DiscoveredApiCall] = []
         var candidates: [PurchaseCandidate] = []
+        var domainImageFallbackURL: URL?
     }
 
     private let logStore: LocalLogStore
@@ -98,6 +99,7 @@ final class DomainScanner {
         var candidates: [PurchaseCandidate] = []
         var discoveredURLs = OrderedURLSet()
         var probedURLs = Set<URL>()
+        var domainImageFallbackURL: URL?
 
         onStatus("Scanning \(domain)")
         logStore.append(.agent, "Domain scan started", metadata: ["domain": domain])
@@ -112,6 +114,9 @@ final class DomainScanner {
             discoveredURLs.append(contentsOf: parsed.discoveredURLs)
             discoveredApiCalls.append(contentsOf: parsed.apiCalls)
             candidates.append(contentsOf: parsed.candidates)
+            if probe.source == .homepage, let fallbackURL = parsed.domainImageFallbackURL {
+                domainImageFallbackURL = fallbackURL
+            }
             logStore.append(.agent, "Probe parsed", metadata: [
                 "domain": domain,
                 "source": probe.source.rawValue,
@@ -141,7 +146,8 @@ final class DomainScanner {
             ])
         }
 
-        let dedupedCandidates = dedupeCandidates(candidates)
+        let enrichedCandidates = applyDomainImageFallback(domainImageFallbackURL, to: candidates)
+        let dedupedCandidates = dedupeCandidates(enrichedCandidates)
         let report = DomainDiscoveryReport(
             domain: domain,
             startedAt: startedAt,
@@ -305,6 +311,9 @@ final class DomainScanner {
         if looksLikeHTML(sourceURL: sourceURL, text: text) {
             result.candidates.append(contentsOf: parseJSONLDProducts(html: text, domain: domain, sourceURL: sourceURL))
             result.candidates.append(contentsOf: parseOpenGraphProduct(html: text, domain: domain, sourceURL: sourceURL))
+            if source == .homepage {
+                result.domainImageFallbackURL = domainImageFallbackURL(in: text, sourceURL: sourceURL)
+            }
         }
 
         result.candidates = dedupeCandidates(result.candidates)
@@ -677,6 +686,67 @@ final class DomainScanner {
         ]
     }
 
+    private func applyDomainImageFallback(_ fallbackURL: URL?, to candidates: [PurchaseCandidate]) -> [PurchaseCandidate] {
+        guard let fallbackURL else { return candidates }
+
+        return candidates.map { candidate in
+            guard candidate.imageURL == nil else { return candidate }
+            var enriched = candidate
+            enriched.imageURL = fallbackURL
+            return enriched
+        }
+    }
+
+    private func domainImageFallbackURL(in html: String, sourceURL: URL) -> URL? {
+        if let openGraphImage = metaValue(in: html, keys: ["og:image", "og:image:secure_url", "twitter:image"]),
+           let url = URL(string: openGraphImage, relativeTo: sourceURL)?.absoluteURL {
+            return url
+        }
+
+        return faviconURL(in: html, sourceURL: sourceURL)
+    }
+
+    private func faviconURL(in html: String, sourceURL: URL) -> URL? {
+        let preferredRelValues = [
+            "apple-touch-icon",
+            "apple-touch-icon-precomposed",
+            "icon",
+            "shortcut icon",
+            "mask-icon"
+        ]
+
+        for relValue in preferredRelValues {
+            if let href = linkHref(in: html, relContaining: relValue),
+               let url = URL(string: href, relativeTo: sourceURL)?.absoluteURL {
+                return url
+            }
+        }
+
+        return URL(string: "/favicon.ico", relativeTo: sourceURL)?.absoluteURL
+    }
+
+    private func linkHref(in html: String, relContaining relValue: String) -> String? {
+        let linkPattern = #"<link\b[^>]*>"#
+        guard let regex = try? NSRegularExpression(pattern: linkPattern, options: [.caseInsensitive]) else { return nil }
+
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        let relNeedle = relValue.lowercased()
+
+        for match in regex.matches(in: html, range: range) {
+            guard let tagRange = Range(match.range, in: html) else { continue }
+            let tag = String(html[tagRange])
+            guard let rel = attributeValue("rel", in: tag)?.lowercased(),
+                  rel.contains(relNeedle),
+                  let href = attributeValue("href", in: tag) else {
+                continue
+            }
+
+            return decodeHTMLEntities(href).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return nil
+    }
+
     private func extractURLs(from text: String, baseURL: URL, domain: String) -> [URL] {
         var urls = OrderedURLSet()
         let patterns = [
@@ -868,6 +938,21 @@ final class DomainScanner {
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&nbsp;", with: " ")
+    }
+
+    private func attributeValue(_ name: String, in tag: String) -> String? {
+        let escapedName = NSRegularExpression.escapedPattern(for: name)
+        let pattern = #"\b\#(escapedName)\s*=\s*(["'])(.*?)\1"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+
+        let range = NSRange(tag.startIndex..<tag.endIndex, in: tag)
+        guard let match = regex.firstMatch(in: tag, range: range),
+              let valueRange = Range(match.range(at: 2), in: tag) else {
+            return nil
+        }
+
+        let value = String(tag[valueRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     private func merchantName(for domain: String) -> String {
