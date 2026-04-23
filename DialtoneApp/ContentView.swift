@@ -733,7 +733,9 @@ struct RotatingOfferSpotlight: View {
             return
         }
 
-        currentCandidateID = spotlightOrder.first ?? ids.first
+        if let firstCandidateID = spotlightOrder.first ?? ids.first {
+            currentCandidateID = bestPreviewCandidateID(near: firstCandidateID) ?? firstCandidateID
+        }
         if let currentCandidateID {
             rememberDisplayedDomain(for: currentCandidateID)
         }
@@ -791,10 +793,32 @@ struct RotatingOfferSpotlight: View {
                   !excludedDomains.contains(normalizedDomain(candidate.domain)) else {
                 continue
             }
-            return candidateID
+
+            return bestPreviewCandidateID(forNormalizedDomain: normalizedDomain(candidate.domain)) ?? candidateID
         }
 
         return nil
+    }
+
+    private func bestPreviewCandidateID(near candidateID: UUID) -> UUID? {
+        guard let candidate = candidate(for: candidateID) else { return nil }
+        return bestPreviewCandidateID(forNormalizedDomain: normalizedDomain(candidate.domain))
+    }
+
+    private func bestPreviewCandidateID(forNormalizedDomain domain: String) -> UUID? {
+        spotlightOrder
+            .compactMap { candidate(for: $0) }
+            .filter { normalizedDomain($0.domain) == domain }
+            .max { previewScore($0) < previewScore($1) }?
+            .id
+    }
+
+    private func previewScore(_ candidate: PurchaseCandidate) -> Double {
+        var score = CandidateDedupe.score(candidate)
+        if candidate.imageURL != nil { score += 1.0 }
+        if candidate.productURL != nil { score += 0.05 }
+        if candidate.price != nil { score += 0.05 }
+        return score
     }
 
     private func rememberDisplayedDomain(for candidateID: UUID) {
