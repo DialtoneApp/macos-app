@@ -151,6 +151,7 @@
 - Made the `Not signed in` account state clickable in the macOS overview and status strip so it starts the desktop login flow, and added a pointing-hand cursor for clickable account states.
 - Changed the macOS main UI to a single-instance window and focus the existing DialtoneApp Desktop window when a desktop auth callback arrives, instead of stacking duplicate main windows.
 - Removed the `View Log` menu item and log window feature, and replaced it with `Log Out`, which clears DialtoneApp Desktop app support files, local log files, app defaults, and the Keychain desktop session.
+- Added a scanner-tab offer spotlight that rotates through discovered offers one at a time every 3 seconds without affecting scanning or the Found Items tab.
 
 ### Still pending for public v0.0.1
 

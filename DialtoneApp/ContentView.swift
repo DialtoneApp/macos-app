@@ -318,6 +318,7 @@ struct ScannerOverviewScreen: View {
         VStack(alignment: .leading, spacing: 18) {
             HeroPanel()
             StatusStrip()
+            RotatingOfferSpotlight()
         }
     }
 }
@@ -648,6 +649,54 @@ struct EmptyScannerState: View {
                     .textSelection(.enabled)
             }
         }
+    }
+}
+
+struct RotatingOfferSpotlight: View {
+    @EnvironmentObject private var model: BotShoppingModel
+    @State private var currentIndex = 0
+
+    private let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(
+                title: "Latest Offer",
+                subtitle: "A rotating preview of found items. The full list stays in the Found Items tab."
+            )
+
+            if model.candidates.isEmpty {
+                EmptyScannerState()
+            } else if let candidate = currentCandidate {
+                CandidateCard(candidate: candidate)
+                    .id(candidate.id)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: candidate.id)
+            }
+        }
+        .onReceive(timer) { _ in
+            advance()
+        }
+        .onChange(of: model.candidates.map(\.id)) { _, ids in
+            guard !ids.isEmpty else {
+                currentIndex = 0
+                return
+            }
+
+            if currentIndex >= ids.count {
+                currentIndex = 0
+            }
+        }
+    }
+
+    private var currentCandidate: PurchaseCandidate? {
+        guard !model.candidates.isEmpty else { return nil }
+        return model.candidates[currentIndex % model.candidates.count]
+    }
+
+    private func advance() {
+        guard model.candidates.count > 1 else { return }
+        currentIndex = (currentIndex + 1) % model.candidates.count
     }
 }
 
