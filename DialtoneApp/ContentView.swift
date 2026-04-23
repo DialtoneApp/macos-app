@@ -850,7 +850,8 @@ struct CandidateCard: View {
                     case .success(let image):
                         image
                             .resizable()
-                            .scaledToFill()
+                            .scaledToFit()
+                            .padding(8)
                     default:
                         Image(systemName: "photo")
                             .font(.largeTitle)
@@ -858,7 +859,7 @@ struct CandidateCard: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .frame(height: 150)
+                .frame(height: 140)
                 .frame(maxWidth: .infinity)
                 .background(Color(nsColor: .controlBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
